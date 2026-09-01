@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import admin from 'firebase-admin';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -27,12 +26,44 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// Helper to call standard Gemini active model
-async function callGemini(apiKey, promptText) {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-  const result = await model.generateContent(promptText);
-  return result.response.text();
+// Universal REST caller supporting standard API keys (AIza...) and Auth keys (AQ...)
+async function callGeminiRest(apiKey, promptText) {
+  const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const isAuthKey = apiKey.startsWith('AQ.');
+      const url = isAuthKey
+        ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+        : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (isAuthKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }]
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message || `HTTP ${res.status}`);
+      }
+
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text;
+    } catch (err) {
+      console.warn(`Attempt with ${model} failed:`, err.message);
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('All model endpoints failed.');
 }
 
 // 1. CHAT ENDPOINT
@@ -51,7 +82,7 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const prompt = `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`;
-    const responseText = await callGemini(apiKey, prompt);
+    const responseText = await callGeminiRest(apiKey, prompt);
 
     if (db) {
       try {
@@ -73,7 +104,7 @@ app.post('/api/chat', async (req, res) => {
           timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
       } catch (dbErr) {
-        console.warn('Firestore chat write warning:', dbErr.message);
+        console.warn('Firestore write warning:', dbErr.message);
       }
     }
 
@@ -129,7 +160,7 @@ const handleSummarize = async (req, res) => {
 
 Journal Entry: "${entry}"`;
 
-    let rawText = await callGemini(apiKey, promptText);
+    let rawText = await callGeminiRest(apiKey, promptText);
     rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
 
     let parsed;
