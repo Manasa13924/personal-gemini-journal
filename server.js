@@ -144,7 +144,6 @@ Journal Entry: "${entry}"`;
       rawText = result.response.text().trim();
     }
     
-    // Strip markdown code fences if returned by model
     rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
 
     let parsed;
