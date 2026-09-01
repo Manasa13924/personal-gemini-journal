@@ -215,7 +215,7 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. ROBUST HISTORY ENDPOINT (Fallback query handling for un-indexed or missing timestamps)
+// 3. ROBUST HISTORY ENDPOINT WITH FALLBACK QUERY HANDLING
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
@@ -235,7 +235,7 @@ const handleHistory = async (req, res) => {
         snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(20).get();
       }
     } catch (queryErr) {
-      console.warn('Ordered query failed, falling back to simple get:', queryErr.message);
+      console.warn('Ordered history query failed, switching to simple query:', queryErr.message);
       if (uid !== 'anonymous') {
         snapshot = await db.collection('users').doc(uid).collection('entries').limit(20).get();
         if (snapshot.empty) {
