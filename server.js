@@ -41,6 +41,7 @@ async function callGeminiRest(apiKey, promptText) {
       const headers = { 'Content-Type': 'application/json' };
       if (isAuthKey) {
         headers['Authorization'] = `Bearer ${apiKey}`;
+        headers['x-goog-api-key'] = apiKey;
       }
 
       const res = await fetch(url, {
@@ -66,7 +67,7 @@ async function callGeminiRest(apiKey, promptText) {
   throw lastError || new Error('All model endpoints failed.');
 }
 
-// 1. CHAT ENDPOINT (Handles POST & GET)
+// 1. CHAT ENDPOINT
 app.post('/api/chat', async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
