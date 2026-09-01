@@ -12,11 +12,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve static assets from both public folder and root directory
+// Serve static assets
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname));
 
-// Initialize Firebase Admin
+// Initialize Firebase Admin SDK
 const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || '/etc/secrets/google-credentials.json';
 try {
   admin.initializeApp({
@@ -30,10 +30,11 @@ try {
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Journal API Route
-app.post('/api/journal', async (req, res) => {
+// Core Gemini Handler
+const handleJournalRequest = async (req, res) => {
   try {
-    const { message } = req.body;
+    const message = req.body.message || req.body.prompt || req.body.text;
+
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
@@ -46,7 +47,9 @@ app.post('/api/journal', async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      analysis: responseText
+      analysis: responseText,
+      response: responseText,
+      reply: responseText
     });
   } catch (error) {
     console.error('Gemini API Error:', error);
@@ -55,9 +58,13 @@ app.post('/api/journal', async (req, res) => {
       details: error.message
     });
   }
-});
+};
 
-// Serve main index.html file at root URL
+// Route handlers for both endpoint names
+app.post('/api/journal', handleJournalRequest);
+app.post('/api/chat', handleJournalRequest);
+
+// Serve index.html on root path
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
