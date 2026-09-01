@@ -27,7 +27,7 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// 1. CHAT ENDPOINT (Returns reply, response, text, message to support any index.html structure)
+// 1. CHAT ENDPOINT
 app.post('/api/chat', async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -52,15 +52,20 @@ app.post('/api/chat', async (req, res) => {
     if (db) {
       try {
         const uid = req.body.uid || req.body.userId || 'anonymous';
-        await db.collection('chats').add({
+        await db.collection('journals').add({
           uid,
           userEntry: message,
           entry: message,
           prompt: message,
           text: message,
           aiResponse: responseText,
+          summary: responseText,
           reply: responseText,
           response: responseText,
+          mood: 'Conversational',
+          tip: 'Keep sharing your thoughts and progress.',
+          actionableTip: 'Keep sharing your thoughts and progress.',
+          actionable_tip: 'Keep sharing your thoughts and progress.',
           timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
       } catch (dbErr) {
@@ -82,12 +87,18 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// 2. MOOD ANALYZER ENDPOINT
+// 2. MOOD ANALYZER ENDPOINT (Supports tip, actionableTip, actionable_tip)
 const handleSummarize = async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      const errObj = { mood: 'Error', summary: 'Missing GEMINI_API_KEY.', tip: 'Add API key on Render.' };
+      const errObj = { 
+        mood: 'Error', 
+        summary: 'Missing GEMINI_API_KEY.', 
+        tip: 'Add API key on Render.',
+        actionableTip: 'Add API key on Render.',
+        actionable_tip: 'Add API key on Render.'
+      };
       return res.status(500).json({ success: false, ...errObj, current: errObj });
     }
 
@@ -95,7 +106,13 @@ const handleSummarize = async (req, res) => {
     const uid = req.body.uid || req.body.userId || 'anonymous';
 
     if (!entry) {
-      const emptyObj = { mood: 'Empty', summary: 'No text provided.', tip: 'Type a reflection first.' };
+      const emptyObj = { 
+        mood: 'Empty', 
+        summary: 'No text provided.', 
+        tip: 'Type a reflection first.',
+        actionableTip: 'Type a reflection first.',
+        actionable_tip: 'Type a reflection first.'
+      };
       return res.status(400).json({ success: false, ...emptyObj, current: emptyObj });
     }
 
@@ -136,13 +153,18 @@ Journal Entry: "${entry}"`;
       try {
         const docData = {
           uid,
-          entry,
+          entry: entry,
           userEntry: entry,
           prompt: entry,
+          text: entry,
           mood: moodValue,
           summary: summaryValue,
           aiResponse: summaryValue,
+          response: summaryValue,
+          reply: summaryValue,
           tip: tipValue,
+          actionableTip: tipValue,
+          actionable_tip: tipValue,
           timestamp: admin.firestore.FieldValue.serverTimestamp()
         };
         await db.collection('journals').add(docData);
@@ -154,20 +176,32 @@ Journal Entry: "${entry}"`;
       }
     }
 
-    return res.status(200).json({
+    const responsePayload = {
       success: true,
       mood: moodValue,
       summary: summaryValue,
       tip: tipValue,
+      actionableTip: tipValue,
+      actionable_tip: tipValue,
       current: {
         mood: moodValue,
         summary: summaryValue,
-        tip: tipValue
+        tip: tipValue,
+        actionableTip: tipValue,
+        actionable_tip: tipValue
       }
-    });
+    };
+
+    return res.status(200).json(responsePayload);
   } catch (error) {
     console.error('Analyze API Error:', error);
-    const fallbackObj = { mood: 'Notice', summary: 'Failed to process request cleanly.', tip: 'Click Analyze Mood once more.' };
+    const fallbackObj = { 
+      mood: 'Notice', 
+      summary: 'Failed to process request cleanly.', 
+      tip: 'Click Analyze Mood once more.',
+      actionableTip: 'Click Analyze Mood once more.',
+      actionable_tip: 'Click Analyze Mood once more.'
+    };
     return res.status(500).json({
       success: false,
       ...fallbackObj,
@@ -181,7 +215,7 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. HISTORY ENDPOINT (Provides all possible keys: userEntry, aiResponse, entry, summary, text, response, reply)
+// 3. HISTORY ENDPOINT (Safely handles incomplete older database records)
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
@@ -203,8 +237,10 @@ const handleHistory = async (req, res) => {
     const entries = [];
     snapshot.forEach(doc => {
       const data = doc.data();
-      const userText = data.userEntry || data.entry || data.prompt || data.message || data.text || 'No entry text recorded';
-      const aiText = data.aiResponse || data.summary || data.response || data.reply || data.tip || 'No AI response recorded';
+      
+      const userText = data.userEntry || data.entry || data.prompt || data.message || data.text || 'Reflection entry recorded';
+      const aiText = data.aiResponse || data.summary || data.response || data.reply || data.tip || data.actionableTip || 'Analysis saved successfully';
+      const tipText = data.actionableTip || data.actionable_tip || data.tip || 'Take it step by step.';
 
       entries.push({
         id: doc.id,
@@ -218,7 +254,9 @@ const handleHistory = async (req, res) => {
         response: aiText,
         reply: aiText,
         mood: data.mood || 'Reflective',
-        tip: data.tip || '',
+        tip: tipText,
+        actionableTip: tipText,
+        actionable_tip: tipText,
         date: data.timestamp ? data.timestamp.toDate().toLocaleString() : new Date().toLocaleString()
       });
     });
