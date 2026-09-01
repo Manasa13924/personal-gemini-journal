@@ -7,7 +7,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. Initialize Firebase Admin SDK using Secret File
 const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || '/etc/secrets/google-credentials.json';
 
 try {
@@ -19,10 +18,8 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// 2. Initialize Gemini AI Client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// 3. Journal Endpoint (handles content generation & mood analysis)
 app.post('/api/journal', async (req, res) => {
   try {
     const { message } = req.body;
@@ -31,7 +28,8 @@ app.post('/api/journal', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // Using gemini-1.5-flash-latest for v1beta endpoint compatibility
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 
     const prompt = `Analyze the following journal entry. Provide a thoughtful response followed by a detected primary mood (e.g., Happy, Stressed, Reflective, Accomplished):\n\nEntry: "${message}"`;
 
@@ -51,8 +49,52 @@ app.post('/api/journal', async (req, res) => {
   }
 });
 
+// Interactive Web Interface at Root
 app.get('/', (req, res) => {
-  res.send('Personal Gemini Journal Backend is Live!');
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Personal Gemini Journal</title>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+        textarea { width: 100%; height: 100px; margin-bottom: 10px; }
+        button { padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        #output { margin-top: 20px; white-space: pre-wrap; background: #f4f4f4; padding: 15px; border-radius: 5px; }
+      </style>
+    </head>
+    <body>
+      <h2>Personal Gemini Journal</h2>
+      <textarea id="entry" placeholder="Write your journal entry here..."></textarea><br>
+      <button onclick="submitEntry()">Analyze Entry</button>
+      <div id="output">Result will appear here...</div>
+
+      <script>
+        async function submitEntry() {
+          const message = document.getElementById('entry').value;
+          const outputDiv = document.getElementById('output');
+          outputDiv.innerText = 'Analyzing with Gemini AI...';
+
+          try {
+            const res = await fetch('/api/journal', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message })
+            });
+            const data = await res.json();
+            if (data.success) {
+              outputDiv.innerText = data.analysis;
+            } else {
+              outputDiv.innerText = 'Error: ' + (data.details || data.error);
+            }
+          } catch (err) {
+            outputDiv.innerText = 'Failed to connect to server.';
+          }
+        }
+      </script>
+    </body>
+    </html>
+  `);
 });
 
 const PORT = process.env.PORT || 10000;
