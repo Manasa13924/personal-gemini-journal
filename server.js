@@ -27,33 +27,62 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// 1. CHAT ENDPOINT
+// 1. CHAT ENDPOINT (Returns reply, response, text, message to support any index.html structure)
 app.post('/api/chat', async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(500).json({ reply: 'Missing GEMINI_API_KEY on Render.' });
+    if (!apiKey) {
+      const msg = 'Missing GEMINI_API_KEY on Render.';
+      return res.status(500).json({ reply: msg, response: msg, text: msg, message: msg });
+    }
 
     const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || '';
-    if (!message) return res.status(400).json({ reply: 'Message content is empty.' });
+    if (!message) {
+      const msg = 'Message content is empty.';
+      return res.status(400).json({ reply: msg, response: msg, text: msg, message: msg });
+    }
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
-    const prompt = `Respond conversationally and supportively to this user message:\n\n"${message}"`;
+    const prompt = `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`;
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
 
+    if (db) {
+      try {
+        const uid = req.body.uid || req.body.userId || 'anonymous';
+        await db.collection('chats').add({
+          uid,
+          userEntry: message,
+          entry: message,
+          prompt: message,
+          text: message,
+          aiResponse: responseText,
+          reply: responseText,
+          response: responseText,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (dbErr) {
+        console.warn('Firestore chat write warning:', dbErr.message);
+      }
+    }
+
     return res.status(200).json({
       success: true,
-      reply: responseText
+      reply: responseText,
+      response: responseText,
+      text: responseText,
+      message: responseText
     });
   } catch (error) {
     console.error('Chat API Error:', error);
-    return res.status(500).json({ reply: 'Could not fetch reply from AI.' });
+    const errMsg = 'Could not fetch reply from AI.';
+    return res.status(500).json({ reply: errMsg, response: errMsg, text: errMsg, message: errMsg });
   }
 });
 
-// 2. MOOD ANALYZER ENDPOINT (Supports both flat and nested JSON response formats)
+// 2. MOOD ANALYZER ENDPOINT
 const handleSummarize = async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -108,8 +137,11 @@ Journal Entry: "${entry}"`;
         const docData = {
           uid,
           entry,
+          userEntry: entry,
+          prompt: entry,
           mood: moodValue,
           summary: summaryValue,
+          aiResponse: summaryValue,
           tip: tipValue,
           timestamp: admin.firestore.FieldValue.serverTimestamp()
         };
@@ -149,11 +181,11 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. PAST REFLECTIONS / HISTORY ENDPOINT
+// 3. HISTORY ENDPOINT (Provides all possible keys: userEntry, aiResponse, entry, summary, text, response, reply)
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
-      return res.status(200).json({ success: true, history: [], journals: [] });
+      return res.status(200).json({ success: true, history: [], journals: [], entries: [] });
     }
 
     const uid = req.query.uid || req.query.userId || 'anonymous';
@@ -171,11 +203,21 @@ const handleHistory = async (req, res) => {
     const entries = [];
     snapshot.forEach(doc => {
       const data = doc.data();
+      const userText = data.userEntry || data.entry || data.prompt || data.message || data.text || 'No entry text recorded';
+      const aiText = data.aiResponse || data.summary || data.response || data.reply || data.tip || 'No AI response recorded';
+
       entries.push({
         id: doc.id,
-        entry: data.entry || '',
+        userEntry: userText,
+        entry: userText,
+        prompt: userText,
+        text: userText,
+        message: userText,
+        aiResponse: aiText,
+        summary: aiText,
+        response: aiText,
+        reply: aiText,
         mood: data.mood || 'Reflective',
-        summary: data.summary || '',
         tip: data.tip || '',
         date: data.timestamp ? data.timestamp.toDate().toLocaleString() : new Date().toLocaleString()
       });
@@ -185,11 +227,12 @@ const handleHistory = async (req, res) => {
       success: true,
       history: entries,
       journals: entries,
-      entries: entries
+      entries: entries,
+      data: entries
     });
   } catch (error) {
     console.error('History API Error:', error);
-    return res.status(500).json({ success: false, history: [], journals: [], entries: [] });
+    return res.status(500).json({ success: false, history: [], journals: [], entries: [], data: [] });
   }
 };
 
