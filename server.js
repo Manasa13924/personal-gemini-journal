@@ -26,7 +26,7 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// Universal REST caller supporting standard API keys (AIza...) and Auth keys (AQ...)
+// Function to call Gemini REST API using Bearer header for AQ. keys
 async function callGeminiRest(apiKey, promptText) {
   const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
   let lastError = null;
