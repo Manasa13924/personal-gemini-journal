@@ -87,7 +87,7 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// 2. MOOD ANALYZER ENDPOINT (Supports tip, actionableTip, actionable_tip)
+// 2. MOOD ANALYZER ENDPOINT
 const handleSummarize = async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -215,51 +215,65 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. HISTORY ENDPOINT (Safely handles incomplete older database records)
+// 3. ROBUST HISTORY ENDPOINT (Fallback query handling for un-indexed or missing timestamps)
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
-      return res.status(200).json({ success: true, history: [], journals: [], entries: [] });
+      return res.status(200).json({ success: true, history: [], journals: [], entries: [], data: [] });
     }
 
     const uid = req.query.uid || req.query.userId || 'anonymous';
     let snapshot;
 
-    if (uid !== 'anonymous') {
-      snapshot = await db.collection('users').doc(uid).collection('entries').orderBy('timestamp', 'desc').limit(20).get();
-      if (snapshot.empty) {
-        snapshot = await db.collection('journals').where('uid', '==', uid).get();
+    try {
+      if (uid !== 'anonymous') {
+        snapshot = await db.collection('users').doc(uid).collection('entries').orderBy('timestamp', 'desc').limit(20).get();
+        if (snapshot.empty) {
+          snapshot = await db.collection('journals').where('uid', '==', uid).get();
+        }
+      } else {
+        snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(20).get();
       }
-    } else {
-      snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(20).get();
+    } catch (queryErr) {
+      console.warn('Ordered query failed, falling back to simple get:', queryErr.message);
+      if (uid !== 'anonymous') {
+        snapshot = await db.collection('users').doc(uid).collection('entries').limit(20).get();
+        if (snapshot.empty) {
+          snapshot = await db.collection('journals').limit(20).get();
+        }
+      } else {
+        snapshot = await db.collection('journals').limit(20).get();
+      }
     }
 
     const entries = [];
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      
-      const userText = data.userEntry || data.entry || data.prompt || data.message || data.text || 'Reflection entry recorded';
-      const aiText = data.aiResponse || data.summary || data.response || data.reply || data.tip || data.actionableTip || 'Analysis saved successfully';
-      const tipText = data.actionableTip || data.actionable_tip || data.tip || 'Take it step by step.';
+    if (snapshot && !snapshot.empty) {
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        
+        const userText = data.userEntry || data.entry || data.prompt || data.message || data.text || 'Reflection entry';
+        const aiText = data.aiResponse || data.summary || data.response || data.reply || data.tip || data.actionableTip || 'Analysis recorded';
+        const tipText = data.actionableTip || data.actionable_tip || data.tip || 'Take it step by step.';
 
-      entries.push({
-        id: doc.id,
-        userEntry: userText,
-        entry: userText,
-        prompt: userText,
-        text: userText,
-        message: userText,
-        aiResponse: aiText,
-        summary: aiText,
-        response: aiText,
-        reply: aiText,
-        mood: data.mood || 'Reflective',
-        tip: tipText,
-        actionableTip: tipText,
-        actionable_tip: tipText,
-        date: data.timestamp ? data.timestamp.toDate().toLocaleString() : new Date().toLocaleString()
+        entries.push({
+          id: doc.id,
+          userEntry: userText,
+          entry: userText,
+          prompt: userText,
+          text: userText,
+          message: userText,
+          aiResponse: aiText,
+          summary: aiText,
+          response: aiText,
+          reply: aiText,
+          mood: data.mood || 'Reflective',
+          tip: tipText,
+          actionableTip: tipText,
+          actionable_tip: tipText,
+          date: data.timestamp && data.timestamp.toDate ? data.timestamp.toDate().toLocaleString() : new Date().toLocaleString()
+        });
       });
-    });
+    }
 
     return res.status(200).json({
       success: true,
