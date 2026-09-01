@@ -27,90 +27,90 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// 1. CHAT HANDLER (Send Message - Pure conversation, no mood tag)
-const handleChatMessage = async (req, res) => {
+// Universal Request Handler for Chat & Mood Analysis
+const handleUnifiedRequest = async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'Missing GEMINI_API_KEY.' });
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Missing GEMINI_API_KEY on Render settings.' });
+    }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const message = req.body.message || req.body.prompt || req.body.text || req.body.entry;
-    if (!message) return res.status(400).json({ error: 'Message is required' });
+    
+    // Fallback extraction across all possible key names from frontend
+    const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || req.body.reflection || req.body.content || req.body.input;
+    const userId = req.body.userId || req.body.uid || req.body.email || req.query.userId || req.query.email || 'mbmanasa777@gmail.com';
 
-    const prompt = `You are a helpful and supportive assistant. Respond naturally and helpfully to this message:\n\n"${message}"`;
+    if (!message) {
+      return res.status(400).json({ error: 'Message or entry content is required.' });
+    }
+
+    const isAnalyzeRoute = req.path.includes('analyze') || req.path.includes('journal') || req.path.includes('mood');
+    
+    let prompt = "";
+    if (isAnalyzeRoute) {
+      prompt = `Provide a thoughtful, empathetic response to the following journal reflection, followed by a separate detected primary mood:\n\nJournal Entry: "${message}"`;
+    } else {
+      prompt = `Respond conversationally and supportively to the following message:\n\n"${message}"`;
+    }
+
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
 
-    return res.status(200).json({
-      success: true,
-      response: responseText,
-      reply: responseText,
-      message: responseText,
-      text: responseText
-    });
-  } catch (error) {
-    console.error('Chat Error:', error);
-    return res.status(500).json({ error: 'Failed to process chat message.' });
-  }
-};
-
-// 2. MOOD ANALYZER HANDLER (Analyze Mood - Specific to journal reflection)
-const handleMoodAnalysis = async (req, res) => {
-  try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'Missing GEMINI_API_KEY.' });
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || req.body.reflection;
-    const userId = req.body.userId || req.body.uid || req.body.email || 'mbmanasa777@gmail.com';
-
-    if (!message) return res.status(400).json({ error: 'Reflection text is required' });
-
-    const prompt = `Analyze the following journal entry. Provide a thoughtful supportive analysis, followed by the detected primary mood (e.g., Happy, Stressed, Reflective, Accomplished):\n\nEntry: "${message}"`;
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-
-    // Determine primary mood string
     let detectedMood = 'Reflective';
     if (/stressed|anxious|overwhelmed/i.test(responseText)) detectedMood = 'Stressed';
     else if (/happy|excited|joy/i.test(responseText)) detectedMood = 'Happy';
     else if (/accomplished|proud|satisfied/i.test(responseText)) detectedMood = 'Accomplished';
 
-    // Store in Firestore for history fetching
+    // Store in Firestore for past reflections history
     if (db) {
       try {
-        const docData = {
+        const entryData = {
           userId,
+          user: userId,
+          email: userId,
           message,
           text: message,
+          reflection: message,
           analysis: responseText,
+          response: responseText,
           mood: detectedMood,
           timestamp: admin.firestore.FieldValue.serverTimestamp()
         };
-        await db.collection('journals').add(docData);
-        await db.collection('users').doc(userId).collection('entries').add(docData);
+        await db.collection('journals').add(entryData);
+        await db.collection('users').doc(userId).collection('entries').add(entryData);
       } catch (dbErr) {
-        console.warn('Firestore write warning:', dbErr.message);
+        console.warn('Firestore write omitted:', dbErr.message);
       }
     }
 
+    // Comprehensive response structure matching all possible frontend keys
     return res.status(200).json({
       success: true,
       analysis: responseText,
+      response: responseText,
+      reply: responseText,
+      message: responseText,
+      result: responseText,
       mood: detectedMood,
       detectedMood: detectedMood,
-      response: responseText,
-      reply: responseText
+      data: {
+        analysis: responseText,
+        mood: detectedMood,
+        response: responseText
+      }
     });
   } catch (error) {
-    console.error('Analysis Error:', error);
-    return res.status(500).json({ error: 'Failed to analyze reflection.' });
+    console.error('Gemini Execution Error:', error);
+    return res.status(500).json({
+      error: 'Failed to process request.',
+      details: error.message
+    });
   }
 };
 
-// 3. HISTORY HANDLER (Loads past reflections for logged-in user)
+// Universal History Fetch Handler
 const handleGetHistory = async (req, res) => {
   try {
     const userId = req.query.userId || req.query.uid || req.query.email || 'mbmanasa777@gmail.com';
@@ -130,21 +130,25 @@ const handleGetHistory = async (req, res) => {
       success: true,
       history,
       entries: history,
-      data: history
+      data: history,
+      reflections: history
     });
   } catch (error) {
-    return res.status(200).json({ success: true, history: [], entries: [] });
+    return res.status(200).json({ success: true, history: [], entries: [], data: [] });
   }
 };
 
-// Endpoints mapping
-app.post('/api/chat', handleChatMessage);
-app.post('/api/journal', handleMoodAnalysis);
-app.post('/api/analyze', handleMoodAnalysis);
+// Express Route Mappings for all common frontend API endpoints
+app.post('/api/journal', handleUnifiedRequest);
+app.post('/api/chat', handleUnifiedRequest);
+app.post('/api/analyze', handleUnifiedRequest);
+app.post('/api/mood', handleUnifiedRequest);
+app.post('/api/reflection', handleUnifiedRequest);
 
 app.get('/api/journal', handleGetHistory);
 app.get('/api/chat', handleGetHistory);
 app.get('/api/history', handleGetHistory);
+app.get('/api/reflections', handleGetHistory);
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
