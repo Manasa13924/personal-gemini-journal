@@ -27,6 +27,24 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
+// Helper to call Gemini model with fallbacks
+async function generateGeminiText(genAI, prompt) {
+  const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'];
+  let lastError = null;
+
+  for (const modelName of modelsToTry) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    } catch (err) {
+      console.warn(`Model ${modelName} failed:`, err.message);
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
 // 1. CHAT ENDPOINT
 app.post('/api/chat', async (req, res) => {
   try {
@@ -43,18 +61,10 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    let responseText = '';
-    
-    try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      const result = await model.generateContent(`Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`);
-      responseText = result.response.text();
-    } catch (modelErr) {
-      console.warn('Primary model failed, falling back to gemini-pro:', modelErr.message);
-      const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-pro' });
-      const result = await fallbackModel.generateContent(`Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`);
-      responseText = result.response.text();
-    }
+    const responseText = await generateGeminiText(
+      genAI, 
+      `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`
+    );
 
     if (db) {
       try {
@@ -133,17 +143,7 @@ const handleSummarize = async (req, res) => {
 
 Journal Entry: "${entry}"`;
 
-    let rawText = '';
-    try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      const result = await model.generateContent(promptText);
-      rawText = result.response.text().trim();
-    } catch (mErr) {
-      const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-pro' });
-      const result = await fallbackModel.generateContent(promptText);
-      rawText = result.response.text().trim();
-    }
-    
+    let rawText = await generateGeminiText(genAI, promptText);
     rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
 
     let parsed;
