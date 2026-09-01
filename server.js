@@ -27,6 +27,14 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
+// Helper to call standard Gemini active model
+async function callGemini(apiKey, promptText) {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const result = await model.generateContent(promptText);
+  return result.response.text();
+}
+
 // 1. CHAT ENDPOINT
 app.post('/api/chat', async (req, res) => {
   try {
@@ -42,11 +50,8 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ reply: msg, response: msg, text: msg, message: msg });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-    
-    const result = await model.generateContent(`Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`);
-    const responseText = result.response.text();
+    const prompt = `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`;
+    const responseText = await callGemini(apiKey, prompt);
 
     if (db) {
       try {
@@ -115,9 +120,6 @@ const handleSummarize = async (req, res) => {
       return res.status(400).json({ success: false, ...emptyObj, current: emptyObj });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-
     const promptText = `Analyze this journal entry and respond strictly in raw JSON with these exact key names:
 {
   "mood": "Single-word detected emotion (e.g., Happy, Stressed, Reflective, Accomplished, Anxious, Calm)",
@@ -127,8 +129,7 @@ const handleSummarize = async (req, res) => {
 
 Journal Entry: "${entry}"`;
 
-    const result = await model.generateContent(promptText);
-    let rawText = result.response.text().trim();
+    let rawText = await callGemini(apiKey, promptText);
     rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
 
     let parsed;
@@ -212,7 +213,7 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. HISTORY ENDPOINT (Fixes Past Reflections)
+// 3. PAST REFLECTIONS / HISTORY ENDPOINT
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
@@ -223,23 +224,19 @@ const handleHistory = async (req, res) => {
     let snapshot;
 
     try {
-      if (uid !== 'anonymous') {
-        snapshot = await db.collection('users').doc(uid).collection('entries').orderBy('timestamp', 'desc').limit(20).get();
-        if (snapshot.empty) {
-          snapshot = await db.collection('journals').where('uid', '==', uid).get();
-        }
-      } else {
-        snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(20).get();
-      }
-    } catch (queryErr) {
-      console.warn('Ordered query failed, using direct collection query:', queryErr.message);
       snapshot = await db.collection('journals').limit(20).get();
+    } catch (queryErr) {
+      console.warn('History query error:', queryErr.message);
     }
 
     const entries = [];
     if (snapshot && !snapshot.empty) {
       snapshot.forEach(doc => {
         const data = doc.data();
+        if (uid !== 'anonymous' && data.uid && data.uid !== uid) {
+          return;
+        }
+
         const userText = data.userEntry || data.entry || data.prompt || data.message || data.text || 'Reflection entry';
         const aiText = data.aiResponse || data.summary || data.response || data.reply || data.tip || 'Analysis recorded';
         const tipText = data.actionableTip || data.actionable_tip || data.tip || 'Take it step by step.';
