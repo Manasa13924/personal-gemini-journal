@@ -27,8 +27,12 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize Gemini AI API Key
+const apiKey = process.env.GEMINI_API_KEY;
+if (!apiKey) {
+  console.error('CRITICAL WARNING: GEMINI_API_KEY environment variable is missing!');
+}
+const genAI = new GoogleGenerativeAI(apiKey || '');
 
 // Core Gemini Handler
 const handleJournalRequest = async (req, res) => {
@@ -39,11 +43,20 @@ const handleJournalRequest = async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
     const prompt = `Analyze the following journal entry. Provide a thoughtful response followed by a detected primary mood (e.g., Happy, Stressed, Reflective, Accomplished):\n\nEntry: "${message}"`;
+    let responseText = '';
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    // Attempt generation with primary flash model, fallback to pro model if necessary
+    try {
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const result = await model.generateContent(prompt);
+      responseText = result.response.text();
+    } catch (primaryErr) {
+      console.warn('Primary model error, attempting fallback:', primaryErr.message);
+      const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+      const fallbackResult = await fallbackModel.generateContent(prompt);
+      responseText = fallbackResult.response.text();
+    }
 
     return res.status(200).json({
       success: true,
@@ -52,7 +65,7 @@ const handleJournalRequest = async (req, res) => {
       reply: responseText
     });
   } catch (error) {
-    console.error('Gemini API Error:', error);
+    console.error('Gemini Execution Error:', error);
     return res.status(500).json({
       error: 'Failed to generate response from Gemini AI.',
       details: error.message
@@ -60,11 +73,9 @@ const handleJournalRequest = async (req, res) => {
   }
 };
 
-// Route handlers for both endpoint names
 app.post('/api/journal', handleJournalRequest);
 app.post('/api/chat', handleJournalRequest);
 
-// Serve index.html on root path
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
