@@ -27,19 +27,19 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// 1. CHAT ENDPOINT (POST /api/chat) -> matches data.reply
+// 1. CHAT ENDPOINT (Matches btn-send in index.html -> expects data.reply)
 app.post('/api/chat', async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return res.status(500).json({ reply: 'Missing GEMINI_API_KEY on Render settings.' });
 
-    const message = req.body.message || '';
+    const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || '';
     if (!message) return res.status(400).json({ reply: 'Message content is empty.' });
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
-    const prompt = `Respond conversationally, naturally, and supportively to this user message. Do not include mood labels or analysis headers:\n\n"${message}"`;
+    const prompt = `Respond conversationally, warmly, and supportively to this user message. Do NOT include mood labels or headers:\n\n"${message}"`;
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
 
@@ -53,22 +53,22 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// 2. ANALYZE ENDPOINT (POST /api/summarize) -> matches data.current.{mood, summary, tip}
+// 2. MOOD ANALYZER ENDPOINT (Matches btn-analyze in index.html -> expects data.current.mood, summary, tip)
 const handleSummarize = async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return res.status(500).json({
-        current: { mood: 'Error', summary: 'Missing GEMINI_API_KEY.', tip: 'Add API key on Render.' }
+        current: { mood: 'Error', summary: 'Missing GEMINI_API_KEY on Render.', tip: 'Add API key on Render settings.' }
       });
     }
 
-    const entry = req.body.entry || req.body.message || '';
-    const uid = req.body.uid || 'anonymous';
+    const entry = req.body.entry || req.body.message || req.body.text || req.body.reflection || '';
+    const uid = req.body.uid || req.body.userId || 'anonymous';
 
     if (!entry) {
       return res.status(400).json({
-        current: { mood: 'Empty', summary: 'No text was provided to analyze.', tip: 'Type a entry in the box first.' }
+        current: { mood: 'Empty', summary: 'No text provided to analyze.', tip: 'Type a reflection in the text box first.' }
       });
     }
 
@@ -78,14 +78,14 @@ const handleSummarize = async (req, res) => {
       generationConfig: { responseMimeType: "application/json" }
     });
 
-    const prompt = `Analyze this journal entry and respond strictly in raw JSON with these exact keys:
+    const prompt = `Analyze this journal reflection entry and respond strictly in raw JSON matching this schema:
 {
-  "mood": "Single-word detected emotion (e.g. Stressed, Happy, Reflective, Accomplished, Anxious)",
+  "mood": "Single-word detected emotion (e.g., Stressed, Happy, Reflective, Accomplished, Anxious, Calm)",
   "summary": "A 2-sentence supportive summary of the entry.",
   "tip": "One concise, practical tip or advice for the user."
 }
 
-Journal Entry: "${entry}"`;
+Reflection Entry: "${entry}"`;
 
     const result = await model.generateContent(prompt);
     let rawText = result.response.text().trim();
@@ -101,7 +101,6 @@ Journal Entry: "${entry}"`;
       };
     }
 
-    // Save to Firestore history
     if (db) {
       try {
         const docData = {
@@ -117,11 +116,11 @@ Journal Entry: "${entry}"`;
           await db.collection('users').doc(uid).collection('entries').add(docData);
         }
       } catch (dbErr) {
-        console.warn('Firestore write omitted:', dbErr.message);
+        console.warn('Firestore write warning:', dbErr.message);
       }
     }
 
-    // Return exact keys expected by index.html line 160-162
+    // Exact structure matching index.html line 160: data.current.mood, summary, tip
     return res.status(200).json({
       success: true,
       current: {
@@ -142,8 +141,11 @@ Journal Entry: "${entry}"`;
   }
 };
 
+// Route Mappings for all potential endpoints called by frontend
 app.post('/api/summarize', handleSummarize);
+app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
+app.post('/api/journal', handleSummarize);
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
