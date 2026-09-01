@@ -1,149 +1,61 @@
-import express from 'express';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import admin from 'firebase-admin';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const express = require('express');
+const cors = require('cors');
+const admin = require('firebase-admin');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
-app.use(express.static(path.join(__dirname, 'public')));
+// 1. Initialize Firebase Admin SDK using Secret File
+const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || '/etc/secrets/google-credentials.json';
 
-admin.initializeApp({
-  projectId: 'personal-gemini-journal-506905'
-});
-const db = admin.firestore();
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-const PRIMARY_MODEL = 'gemini-3.6-flash';
-const FALLBACK_MODEL = 'gemini-3.7-flash';
-
-async function generateContentWithFallback(prompt, generationConfig = {}) {
-  const modelsToTry = [PRIMARY_MODEL, FALLBACK_MODEL];
-  for (const modelName of modelsToTry) {
-    const model = genAI.getGenerativeModel({ model: modelName, generationConfig });
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        return await model.generateContent(prompt);
-      } catch (error) {
-        const status = error.status || (error.message && error.message.includes('503') ? 503 : null);
-        if ((status === 503 || status === 429) && attempt < 3) {
-          await new Promise((resolve) => setTimeout(resolve, attempt * 3000));
-        } else if (modelName !== modelsToTry[modelsToTry.length - 1]) {
-          break;
-        } else {
-          throw error;
-        }
-      }
-    }
-  }
+try {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccountPath)
+  });
+  console.log('Firebase Admin initialized successfully.');
+} catch (error) {
+  console.error('Firebase initialization error:', error.message);
 }
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// 2. Initialize Gemini AI Client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Endpoint: Chat Message (Enforces isolated userId)
-app.post('/api/chat', async (req, res) => {
-  const { message, userId } = req.body;
-
-  if (!userId) {
-    return res.status(401).json({ error: 'Authentication required. User ID missing.' });
-  }
-  if (!message) {
-    return res.status(400).json({ error: 'Message is required' });
-  }
-
+// 3. Journal Endpoint (handles content generation & mood analysis)
+app.post('/api/journal', async (req, res) => {
   try {
-    const result = await generateContentWithFallback(message);
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+    const prompt = `Analyze the following journal entry. Provide a thoughtful response followed by a detected primary mood (e.g., Happy, Stressed, Reflective, Accomplished):\n\nEntry: "${message}"`;
+
+    const result = await model.generateContent(prompt);
     const responseText = result.response.text();
 
-    await db.collection('users').doc(userId).collection('journals').add({
-      user_message: message,
-      bot_response: responseText,
-      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    return res.status(200).json({
+      success: true,
+      analysis: responseText
     });
-
-    res.json({ response: responseText });
   } catch (error) {
-    console.error('Chat API Error:', error);
-    res.status(500).json({ error: error.message || 'Backend server error' });
-  }
-});
-
-// Endpoint: Mood Analysis (Enforces isolated userId)
-app.post('/api/analyze-mood', async (req, res) => {
-  const { message, userId } = req.body;
-
-  if (!userId) {
-    return res.status(401).json({ error: 'Authentication required. User ID missing.' });
-  }
-  if (!message) {
-    return res.status(400).json({ error: 'Message is required for analysis' });
-  }
-
-  const prompt = `
-    Analyze the following user reflection entry.
-    User Entry: "${message}"
-
-    Return JSON strictly in this format:
-    {
-      "mood": "Single Word Mood Tag",
-      "summary": "One sentence summary of how the user is feeling.",
-      "actionable_tip": "One helpful recommendation for the user."
-    }
-  `;
-
-  try {
-    const result = await generateContentWithFallback(prompt, { responseMimeType: 'application/json' });
-    const analysisData = JSON.parse(result.response.text());
-
-    await db.collection('users').doc(userId).collection('mood_analysis').add({
-      user_message: message,
-      analysis: analysisData,
-      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    console.error('Gemini API Error:', error);
+    return res.status(500).json({
+      error: 'Failed to generate response from Gemini AI.',
+      details: error.message
     });
-
-    res.json(analysisData);
-  } catch (error) {
-    console.error('Analyze API Error:', error);
-    res.status(500).json({ error: error.message || 'Failed to analyze reflection.' });
   }
 });
 
-// Endpoint: User Journal History
-app.get('/api/history', async (req, res) => {
-  const { userId } = req.query;
-
-  if (!userId) {
-    return res.status(401).json({ error: 'Authentication required. User ID missing.' });
-  }
-
-  try {
-    const snapshot = await db.collection('users')
-      .doc(userId)
-      .collection('journals')
-      .orderBy('timestamp', 'desc')
-      .limit(10)
-      .get();
-
-    const journals = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-    res.json({ journals });
-  } catch (error) {
-    console.error('History API Error:', error);
-    res.status(500).json({ error: 'Failed to fetch journal history' });
-  }
+app.get('/', (req, res) => {
+  res.send('Personal Gemini Journal Backend is Live!');
 });
 
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on 0.0.0.0:${PORT}`);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
