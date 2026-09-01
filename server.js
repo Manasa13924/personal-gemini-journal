@@ -3,6 +3,7 @@ import cors from 'cors';
 import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { GoogleGenAI } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,45 +27,14 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// REST helper supporting standard keys (AIza) and Auth keys (AQ)
-async function callGeminiRest(apiKey, promptText) {
-  const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
-  let lastError = null;
-
-  for (const model of models) {
-    try {
-      const isAuthKey = apiKey.startsWith('AQ.');
-      const url = isAuthKey
-        ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
-        : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-      const headers = { 'Content-Type': 'application/json' };
-      if (isAuthKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-        headers['x-goog-api-key'] = apiKey;
-      }
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }]
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error?.message || `HTTP ${res.status}`);
-      }
-
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) return text;
-    } catch (err) {
-      console.warn(`Attempt with ${model} failed:`, err.message);
-      lastError = err;
-    }
-  }
-  throw lastError || new Error('All model endpoints failed.');
+// SDK helper call
+async function callGeminiSDK(apiKey, promptText) {
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: promptText,
+  });
+  return response.text;
 }
 
 // 1. CHAT ENDPOINT
@@ -86,9 +56,9 @@ app.post('/api/chat', async (req, res) => {
     let responseText = '';
 
     try {
-      responseText = await callGeminiRest(apiKey, prompt);
+      responseText = await callGeminiSDK(apiKey, prompt);
     } catch (aiErr) {
-      console.error('Gemini REST Call Failed:', aiErr.message);
+      console.error('Gemini SDK Call Failed:', aiErr.message);
       responseText = `Thank you for your entry: "${message}". Note: Gemini response unavailable (${aiErr.message}).`;
     }
 
@@ -174,7 +144,7 @@ Journal Entry: "${entry}"`;
 
     let rawText = '';
     try {
-      rawText = await callGeminiRest(apiKey, promptText);
+      rawText = await callGeminiSDK(apiKey, promptText);
     } catch (aiErr) {
       rawText = JSON.stringify({
         mood: "Reflective",
