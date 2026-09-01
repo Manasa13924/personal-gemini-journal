@@ -32,7 +32,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      const msg = 'Missing GEMINI_API_KEY on Render.';
+      const msg = 'Missing GEMINI_API_KEY on Render environment variables.';
       return res.status(500).json({ reply: msg, response: msg, text: msg, message: msg });
     }
 
@@ -43,11 +43,18 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-
-    const prompt = `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`;
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    let responseText = '';
+    
+    try {
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const result = await model.generateContent(`Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`);
+      responseText = result.response.text();
+    } catch (modelErr) {
+      console.warn('Primary model failed, falling back to gemini-pro:', modelErr.message);
+      const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      const result = await fallbackModel.generateContent(`Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`);
+      responseText = result.response.text();
+    }
 
     if (db) {
       try {
@@ -117,12 +124,7 @@ const handleSummarize = async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-3.6-flash',
-      generationConfig: { responseMimeType: "application/json" }
-    });
-
-    const prompt = `Analyze this journal entry and respond strictly in raw JSON with these exact key names:
+    const promptText = `Analyze this journal entry and respond strictly in raw JSON with these exact key names:
 {
   "mood": "Single-word detected emotion (e.g., Happy, Stressed, Reflective, Accomplished, Anxious, Calm)",
   "summary": "A 2-sentence supportive summary of the entry.",
@@ -131,9 +133,20 @@ const handleSummarize = async (req, res) => {
 
 Journal Entry: "${entry}"`;
 
-    const result = await model.generateContent(prompt);
-    let rawText = result.response.text().trim();
+    let rawText = '';
+    try {
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const result = await model.generateContent(promptText);
+      rawText = result.response.text().trim();
+    } catch (mErr) {
+      const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      const result = await fallbackModel.generateContent(promptText);
+      rawText = result.response.text().trim();
+    }
     
+    // Strip markdown code fences if returned by model
+    rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+
     let parsed;
     try {
       parsed = JSON.parse(rawText);
@@ -215,7 +228,7 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. ROBUST HISTORY ENDPOINT WITH FALLBACK QUERY HANDLING
+// 3. HISTORY ENDPOINT
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
@@ -235,7 +248,7 @@ const handleHistory = async (req, res) => {
         snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(20).get();
       }
     } catch (queryErr) {
-      console.warn('Ordered history query failed, switching to simple query:', queryErr.message);
+      console.warn('Ordered history query failed, switching to fallback:', queryErr.message);
       if (uid !== 'anonymous') {
         snapshot = await db.collection('users').doc(uid).collection('entries').limit(20).get();
         if (snapshot.empty) {
