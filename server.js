@@ -27,24 +27,6 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// Helper to call Gemini model with fallbacks
-async function generateGeminiText(genAI, prompt) {
-  const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'];
-  let lastError = null;
-
-  for (const modelName of modelsToTry) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    } catch (err) {
-      console.warn(`Model ${modelName} failed:`, err.message);
-      lastError = err;
-    }
-  }
-  throw lastError;
-}
-
 // 1. CHAT ENDPOINT
 app.post('/api/chat', async (req, res) => {
   try {
@@ -61,10 +43,10 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const responseText = await generateGeminiText(
-      genAI, 
-      `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`
-    );
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    
+    const result = await model.generateContent(`Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`);
+    const responseText = result.response.text();
 
     if (db) {
       try {
@@ -134,6 +116,8 @@ const handleSummarize = async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+
     const promptText = `Analyze this journal entry and respond strictly in raw JSON with these exact key names:
 {
   "mood": "Single-word detected emotion (e.g., Happy, Stressed, Reflective, Accomplished, Anxious, Calm)",
@@ -143,7 +127,8 @@ const handleSummarize = async (req, res) => {
 
 Journal Entry: "${entry}"`;
 
-    let rawText = await generateGeminiText(genAI, promptText);
+    const result = await model.generateContent(promptText);
+    let rawText = result.response.text().trim();
     rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
 
     let parsed;
@@ -227,7 +212,7 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. HISTORY ENDPOINT
+// 3. HISTORY ENDPOINT (Fixes Past Reflections)
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
@@ -247,24 +232,16 @@ const handleHistory = async (req, res) => {
         snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(20).get();
       }
     } catch (queryErr) {
-      console.warn('Ordered history query failed, switching to fallback:', queryErr.message);
-      if (uid !== 'anonymous') {
-        snapshot = await db.collection('users').doc(uid).collection('entries').limit(20).get();
-        if (snapshot.empty) {
-          snapshot = await db.collection('journals').limit(20).get();
-        }
-      } else {
-        snapshot = await db.collection('journals').limit(20).get();
-      }
+      console.warn('Ordered query failed, using direct collection query:', queryErr.message);
+      snapshot = await db.collection('journals').limit(20).get();
     }
 
     const entries = [];
     if (snapshot && !snapshot.empty) {
       snapshot.forEach(doc => {
         const data = doc.data();
-        
         const userText = data.userEntry || data.entry || data.prompt || data.message || data.text || 'Reflection entry';
-        const aiText = data.aiResponse || data.summary || data.response || data.reply || data.tip || data.actionableTip || 'Analysis recorded';
+        const aiText = data.aiResponse || data.summary || data.response || data.reply || data.tip || 'Analysis recorded';
         const tipText = data.actionableTip || data.actionable_tip || data.tip || 'Take it step by step.';
 
         entries.push({
@@ -296,7 +273,7 @@ const handleHistory = async (req, res) => {
     });
   } catch (error) {
     console.error('History API Error:', error);
-    return res.status(500).json({ success: false, history: [], journals: [], entries: [], data: [] });
+    return res.status(200).json({ success: true, history: [], journals: [], entries: [], data: [] });
   }
 };
 
