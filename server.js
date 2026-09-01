@@ -47,8 +47,8 @@ const handleJournalRequest = async (req, res) => {
 
     const prompt = `Analyze the following journal entry. Provide a thoughtful response followed by a detected primary mood (e.g., Happy, Stressed, Reflective, Accomplished):\n\nEntry: "${message}"`;
     
-    // Updated model targeting gemini-2.5-flash
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // Updated model targeting gemini-3.6-flash
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
 
