@@ -236,7 +236,7 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. HISTORY ENDPOINTS
+// 3. HISTORY ENDPOINTS (Updated with full key aliases)
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
@@ -260,26 +260,38 @@ const handleHistory = async (req, res) => {
           return;
         }
 
-        const userText = data.userEntry || data.entry || data.prompt || data.message || data.text || 'Reflection entry';
+        const userText = data.userEntry || data.entry || data.prompt || data.message || data.text || data.content || data.reflection || 'Reflection entry';
         const aiText = data.aiResponse || data.summary || data.response || data.reply || data.tip || 'Analysis recorded';
         const tipText = data.actionableTip || data.actionable_tip || data.tip || 'Take it step by step.';
+        const moodText = data.mood || 'Reflective';
+        const dateText = data.timestamp && data.timestamp.toDate ? data.timestamp.toDate().toLocaleString() : new Date().toLocaleString();
 
         entries.push({
           id: doc.id,
+          // User text aliases
           userEntry: userText,
           entry: userText,
           prompt: userText,
           text: userText,
           message: userText,
+          content: userText,
+          reflection: userText,
+          
+          // AI output aliases
           aiResponse: aiText,
           summary: aiText,
           response: aiText,
           reply: aiText,
-          mood: data.mood || 'Reflective',
+          
+          // Metadata aliases
+          mood: moodText,
+          tag: moodText,
           tip: tipText,
           actionableTip: tipText,
           actionable_tip: tipText,
-          date: data.timestamp && data.timestamp.toDate ? data.timestamp.toDate().toLocaleString() : new Date().toLocaleString()
+          date: dateText,
+          created_at: dateText,
+          createdAt: dateText
         });
       });
     }
@@ -289,7 +301,8 @@ const handleHistory = async (req, res) => {
       history: entries,
       journals: entries,
       entries: entries,
-      data: entries
+      data: entries,
+      reflections: entries
     });
   } catch (error) {
     console.error('History API Error:', error);
@@ -300,6 +313,7 @@ const handleHistory = async (req, res) => {
 app.get('/api/history', handleHistory);
 app.get('/api/journals', handleHistory);
 app.get('/api/past-reflections', handleHistory);
+app.get('/api/reflections', handleHistory);
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
