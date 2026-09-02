@@ -252,7 +252,7 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. HISTORY ENDPOINT (WITH UNDEFINED PREVENTATIVE ALIASES & ORDERING)
+// 3. HISTORY ENDPOINT
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
@@ -285,7 +285,6 @@ const handleHistory = async (req, res) => {
 
         entries.push({
           id: doc.id,
-          // All possible property names frontend script might look for
           userEntry: userText,
           entry: userText,
           prompt: userText,
