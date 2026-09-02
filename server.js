@@ -252,7 +252,7 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. HISTORY ENDPOINT
+// 3. HISTORY ENDPOINT (WITH UNDEFINED PREVENTATIVE ALIASES & ORDERING)
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
@@ -263,9 +263,10 @@ const handleHistory = async (req, res) => {
     let snapshot;
 
     try {
-      snapshot = await db.collection('journals').limit(20).get();
+      snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(20).get();
     } catch (queryErr) {
-      console.warn('History query error:', queryErr.message);
+      console.warn('History ordered query failed, falling back to simple query:', queryErr.message);
+      snapshot = await db.collection('journals').limit(20).get();
     }
 
     const entries = [];
@@ -284,6 +285,7 @@ const handleHistory = async (req, res) => {
 
         entries.push({
           id: doc.id,
+          // All possible property names frontend script might look for
           userEntry: userText,
           entry: userText,
           prompt: userText,
@@ -291,18 +293,24 @@ const handleHistory = async (req, res) => {
           message: userText,
           content: userText,
           reflection: userText,
+          
           aiResponse: aiText,
           summary: aiText,
           response: aiText,
           reply: aiText,
+          
           mood: moodText,
           tag: moodText,
+          emotion: moodText,
+          
           tip: tipText,
           actionableTip: tipText,
           actionable_tip: tipText,
+          
           date: dateText,
           created_at: dateText,
-          createdAt: dateText
+          createdAt: dateText,
+          timestamp: dateText
         });
       });
     }
