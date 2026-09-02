@@ -62,7 +62,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || '';
     if (!message) {
-      return res.status(200).json({ success: true, reply: 'Message empty.' });
+      return res.status(200).json({ success: true, reply: 'Message empty.', response: 'Message empty.' });
     }
 
     let responseText = '';
@@ -84,16 +84,21 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    return res.status(200).json({ success: true, reply: responseText, response: responseText });
+    return res.status(200).json({ 
+      success: true, 
+      reply: responseText, 
+      response: responseText,
+      aiResponse: responseText 
+    });
   } catch (error) {
-    return res.status(200).json({ success: true, reply: 'Entry saved.' });
+    return res.status(200).json({ success: true, reply: 'Entry saved.', response: 'Entry saved.' });
   }
 });
 
 // 2. Summarize & Analyze Mood Endpoint
 app.post('/api/summarize', async (req, res) => {
   try {
-    const entry = req.body.entry || req.body.message || '';
+    const entry = req.body.entry || req.body.message || req.body.text || req.body.prompt || '';
     if (!entry) {
       return res.status(400).json({ error: 'Entry text is required.' });
     }
@@ -142,6 +147,7 @@ Journal Entry: "${entry}"`;
       success: true,
       mood,
       summary,
+      analysis: summary,
       tip,
       actionableTip: tip
     });
@@ -153,7 +159,9 @@ Journal Entry: "${entry}"`;
 // 3. Past History Endpoint
 const handleHistory = async (req, res) => {
   try {
-    if (!db) return res.status(200).json({ success: true, history: [] });
+    if (!db) {
+      return res.status(200).json({ success: true, history: [], entries: [], data: [] });
+    }
 
     const reqUid = req.query.uid || req.query.userId || '';
     let snapshot;
@@ -196,20 +204,30 @@ const handleHistory = async (req, res) => {
           userEntry: userText,
           response: aiText,
           aiResponse: aiText,
-          date: dateText
+          summary: aiText,
+          mood: data.mood || 'Reflective',
+          tip: data.tip || '',
+          date: dateText,
+          timestamp: dateText
         });
       });
     }
 
-    return res.status(200).json({ success: true, history: entries });
+    return res.status(200).json({ 
+      success: true, 
+      history: entries,
+      entries: entries,
+      data: entries 
+    });
   } catch (error) {
-    return res.status(200).json({ success: true, history: [] });
+    return res.status(200).json({ success: true, history: [], entries: [], data: [] });
   }
 };
 
 app.get('/api/history', handleHistory);
+app.post('/api/history', handleHistory);
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server on port ${PORT}`));
-
