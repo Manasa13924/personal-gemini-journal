@@ -9,13 +9,13 @@
   "dependencies": {
     "@google-cloud/firestore": "^9.0.0",
     "@google-cloud/secret-manager": "^5.0.0",
-    "@google/genai": "^2.0.0",
+    "@google/genai": "^2.20.0",
     "@google/generative-ai": "^0.24.1",
     "cors": "^2.8.6",
     "dotenv": "^16.4.5",
     "express": "^4.22.2",
     "firebase-admin": "^12.7.0"
   },
-  "keywords": [],
-  "type": "module"
+  "keywords": []
+  
 }
