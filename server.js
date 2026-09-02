@@ -57,6 +57,7 @@ async function callGeminiSDK(promptText) {
   throw lastError || new Error('All configured API keys in pool failed.');
 }
 
+// 1. Chat Endpoint
 app.post('/api/chat', async (req, res) => {
   try {
     const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || '';
@@ -66,7 +67,7 @@ app.post('/api/chat', async (req, res) => {
 
     let responseText = '';
     try {
-      responseText = await callGeminiSDK(`Respond conversationally to: "${message}"`);
+      responseText = await callGeminiSDK(`Respond conversationally to this journal entry: "${message}"`);
     } catch (aiErr) {
       responseText = `Received entry: "${message}"`;
     }
@@ -89,30 +90,105 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// 2. Summarize & Analyze Mood Endpoint
+app.post('/api/summarize', async (req, res) => {
+  try {
+    const entry = req.body.entry || req.body.message || '';
+    if (!entry) {
+      return res.status(400).json({ error: 'Entry text is required.' });
+    }
+
+    const prompt = `Analyze this journal entry and respond ONLY with valid JSON (no markdown formatting, no code blocks):
+{
+  "mood": "Single word mood (e.g. Reflective, Happy, Anxious)",
+  "summary": "Brief 1-2 sentence summary of the entry",
+  "tip": "A short actionable tip or piece of advice"
+}
+
+Journal Entry: "${entry}"`;
+
+    let mood = 'Reflective';
+    let summary = 'Reflection recorded successfully.';
+    let tip = 'Keep expressing your thoughts regularly.';
+
+    try {
+      const aiRaw = await callGeminiSDK(prompt);
+      const cleanJson = aiRaw.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      if (parsed.mood) mood = parsed.mood;
+      if (parsed.summary) summary = parsed.summary;
+      if (parsed.tip) tip = parsed.tip;
+    } catch (parseErr) {
+      summary = `Recorded entry: "${entry.substring(0, 50)}..."`;
+    }
+
+    if (db) {
+      const uid = req.body.uid || req.body.userId || 'anonymous';
+      await db.collection('journals').add({
+        uid,
+        entry,
+        userEntry: entry,
+        mood,
+        summary,
+        tip,
+        actionableTip: tip,
+        response: summary,
+        aiResponse: summary,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      mood,
+      summary,
+      tip,
+      actionableTip: tip
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to analyze entry.' });
+  }
+});
+
+// 3. Past History Endpoint
 const handleHistory = async (req, res) => {
   try {
     if (!db) return res.status(200).json({ success: true, history: [] });
 
-    const uid = req.query.uid || req.query.userId || 'anonymous';
+    const reqUid = req.query.uid || req.query.userId || '';
     let snapshot;
 
     try {
-      snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(20).get();
+      snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(30).get();
     } catch (queryErr) {
-      snapshot = await db.collection('journals').limit(20).get();
+      snapshot = await db.collection('journals').limit(30).get();
     }
 
     const entries = [];
     if (snapshot && !snapshot.empty) {
       snapshot.forEach(doc => {
         const data = doc.data();
-        if (uid !== 'anonymous' && data.uid && data.uid !== uid) return;
 
-        const pickFirst = (...vals) => vals.find(v => typeof v === 'string' && v.trim().length > 0) || 'N/A';
+        if (reqUid && data.uid && data.uid !== reqUid && data.uid !== 'anonymous') {
+          return;
+        }
 
-        const userText = pickFirst(data.entry, data.userEntry, data.prompt, data.text, data.message);
-        const aiText = pickFirst(data.aiResponse, data.response, data.summary, data.reply);
-        const dateText = data.timestamp && data.timestamp.toDate ? data.timestamp.toDate().toLocaleString() : 'Recently';
+        const pickFirst = (...vals) => {
+          for (const val of vals) {
+            if (typeof val === 'string' && val.trim().length > 0 && val.trim() !== 'undefined') {
+              return val.trim();
+            }
+          }
+          return null;
+        };
+
+        const userText = pickFirst(data.entry, data.userEntry, data.prompt, data.text, data.message) || 'No entry text';
+        const aiText = pickFirst(data.aiResponse, data.summary, data.reply, data.response, data.tip) || 'No AI response recorded';
+        
+        let dateText = 'Recently';
+        if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+          dateText = data.timestamp.toDate().toLocaleString();
+        }
 
         entries.push({
           id: doc.id,
