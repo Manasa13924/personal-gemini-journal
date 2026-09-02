@@ -27,17 +27,38 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// SDK call targeting gemini-3.6-flash
-async function callGeminiSDK(apiKey, promptText) {
-  const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
-    model: 'gemini-3.6-flash',
-    contents: promptText,
-  });
-  return response.text;
+// Multi-Key SDK call with automatic fallback rotation
+async function callGeminiSDK(promptText) {
+  const rawKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
+  const keys = rawKeys.split(',').map(k => k.trim()).filter(Boolean);
+  
+  if (keys.length === 0) {
+    throw new Error('No API keys configured.');
+  }
+
+  let lastError = null;
+
+  for (let i = 0; i < keys.length; i++) {
+    const apiKey = keys[i];
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: promptText,
+      });
+      if (response && response.text) {
+        return response.text;
+      }
+    } catch (err) {
+      console.warn(`Key #${i + 1} (${apiKey.substring(0, 6)}...) failed or exhausted limit: ${err.message}`);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('All configured API keys in pool failed.');
 }
 
-// Local offline fallback engine for mood & reflection processing
+// Offline fallback engine for backup
 function generateOfflineAnalysis(entry) {
   const lower = entry.toLowerCase();
   let mood = 'Reflective';
@@ -62,7 +83,6 @@ function generateOfflineAnalysis(entry) {
 // 1. CHAT ENDPOINT
 app.post('/api/chat', async (req, res) => {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
     const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || '';
     
     if (!message) {
@@ -72,16 +92,12 @@ app.post('/api/chat', async (req, res) => {
 
     let responseText = '';
 
-    if (apiKey) {
-      try {
-        const prompt = `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`;
-        responseText = await callGeminiSDK(apiKey, prompt);
-      } catch (aiErr) {
-        console.warn('Gemini API Unavailable/Quota Exceeded. Using offline conversational response:', aiErr.message);
-        responseText = `Thank you for sharing your thoughts: "${message}". I'm here to support your journaling journey!`;
-      }
-    } else {
-      responseText = `Thank you for sharing your thoughts: "${message}". Keep up your journaling practice!`;
+    try {
+      const prompt = `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`;
+      responseText = await callGeminiSDK(prompt);
+    } catch (aiErr) {
+      console.warn('All Gemini API keys failed or exhausted. Using fallback response:', aiErr.message);
+      responseText = `Thank you for sharing your thoughts: "${message}". Keep up your daily practice!`;
     }
 
     if (db) {
@@ -129,7 +145,6 @@ app.get('/api/chat', (req, res) => {
 // 2. MOOD ANALYZER ENDPOINT
 const handleSummarize = async (req, res) => {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
     const entry = req.body.entry || req.body.message || req.body.text || req.body.reflection || '';
     const uid = req.body.uid || req.body.userId || 'anonymous';
 
@@ -148,8 +163,7 @@ const handleSummarize = async (req, res) => {
     let summaryValue = '';
     let tipValue = '';
 
-    if (apiKey) {
-      const promptText = `Analyze this journal entry and respond strictly in raw JSON with these exact key names:
+    const promptText = `Analyze this journal entry and respond strictly in raw JSON with these exact key names:
 {
   "mood": "Single-word detected emotion (e.g., Happy, Stressed, Reflective, Accomplished, Anxious, Calm)",
   "summary": "A 2-sentence supportive summary of the entry.",
@@ -158,22 +172,16 @@ const handleSummarize = async (req, res) => {
 
 Journal Entry: "${entry}"`;
 
-      try {
-        let rawText = await callGeminiSDK(apiKey, promptText);
-        rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-        const parsed = JSON.parse(rawText);
-        
-        moodValue = parsed.mood || 'Reflective';
-        summaryValue = parsed.summary || `Summary: ${entry}`;
-        tipValue = parsed.tip || 'Keep up your daily reflection habit.';
-      } catch (aiErr) {
-        console.warn('Gemini API Quota reached/Error. Falling back to local analyzer:', aiErr.message);
-        const offline = generateOfflineAnalysis(entry);
-        moodValue = offline.mood;
-        summaryValue = offline.summary;
-        tipValue = offline.tip;
-      }
-    } else {
+    try {
+      let rawText = await callGeminiSDK(promptText);
+      rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed = JSON.parse(rawText);
+      
+      moodValue = parsed.mood || 'Reflective';
+      summaryValue = parsed.summary || `Summary: ${entry}`;
+      tipValue = parsed.tip || 'Keep up your daily reflection habit.';
+    } catch (aiErr) {
+      console.warn('Gemini API key pool exhausted. Falling back to local offline engine:', aiErr.message);
       const offline = generateOfflineAnalysis(entry);
       moodValue = offline.mood;
       summaryValue = offline.summary;
