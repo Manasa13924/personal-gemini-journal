@@ -27,7 +27,7 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// SDK helper targeting gemini-3.6-flash
+// SDK call targeting gemini-3.6-flash
 async function callGeminiSDK(apiKey, promptText) {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
@@ -37,29 +37,51 @@ async function callGeminiSDK(apiKey, promptText) {
   return response.text;
 }
 
+// Local offline fallback engine for mood & reflection processing
+function generateOfflineAnalysis(entry) {
+  const lower = entry.toLowerCase();
+  let mood = 'Reflective';
+  let tip = 'Take a moment to pause and appreciate your effort today.';
+
+  if (lower.includes('happy') || lower.includes('great') || lower.includes('good') || lower.includes('excited') || lower.includes('won') || lower.includes('achieved')) {
+    mood = 'Accomplished';
+    tip = 'Celebrate your wins, no matter how small!';
+  } else if (lower.includes('sad') || lower.includes('tired') || lower.includes('stressed') || lower.includes('hard') || lower.includes('difficult')) {
+    mood = 'Tired';
+    tip = 'Be kind to yourself today and ensure you get proper rest.';
+  } else if (lower.includes('anxious') || lower.includes('worry') || lower.includes('scared') || lower.includes('nervous')) {
+    mood = 'Anxious';
+    tip = 'Focus on one small manageable task at a time.';
+  }
+
+  const summary = `Reflection logged successfully: "${entry.length > 60 ? entry.substring(0, 60) + '...' : entry}"`;
+  
+  return { mood, summary, tip };
+}
+
 // 1. CHAT ENDPOINT
 app.post('/api/chat', async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      const msg = 'Missing GEMINI_API_KEY environment variable on Render.';
-      return res.status(200).json({ success: true, reply: msg, response: msg, text: msg, message: msg });
-    }
-
     const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || '';
+    
     if (!message) {
       const msg = 'Message content is empty.';
       return res.status(200).json({ success: true, reply: msg, response: msg, text: msg, message: msg });
     }
 
-    const prompt = `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`;
     let responseText = '';
 
-    try {
-      responseText = await callGeminiSDK(apiKey, prompt);
-    } catch (aiErr) {
-      console.error('Gemini SDK Call Failed:', aiErr.message);
-      responseText = `Thank you for your entry: "${message}". Note: Gemini response unavailable (${aiErr.message}).`;
+    if (apiKey) {
+      try {
+        const prompt = `Respond conversationally, warmly, and supportively to this user message:\n\n"${message}"`;
+        responseText = await callGeminiSDK(apiKey, prompt);
+      } catch (aiErr) {
+        console.warn('Gemini API Unavailable/Quota Exceeded. Using offline conversational response:', aiErr.message);
+        responseText = `Thank you for sharing your thoughts: "${message}". I'm here to support your journaling journey!`;
+      }
+    } else {
+      responseText = `Thank you for sharing your thoughts: "${message}". Keep up your journaling practice!`;
     }
 
     if (db) {
@@ -101,24 +123,13 @@ app.post('/api/chat', async (req, res) => {
 });
 
 app.get('/api/chat', (req, res) => {
-  res.status(200).send('Chat API endpoint is active. Use POST requests to send messages.');
+  res.status(200).send('Chat API endpoint is active.');
 });
 
 // 2. MOOD ANALYZER ENDPOINT
 const handleSummarize = async (req, res) => {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      const errObj = { 
-        mood: 'Notice', 
-        summary: 'Missing GEMINI_API_KEY on Render.', 
-        tip: 'Check environment variables.',
-        actionableTip: 'Check environment variables.',
-        actionable_tip: 'Check environment variables.'
-      };
-      return res.status(200).json({ success: true, ...errObj, current: errObj });
-    }
-
     const entry = req.body.entry || req.body.message || req.body.text || req.body.reflection || '';
     const uid = req.body.uid || req.body.userId || 'anonymous';
 
@@ -133,7 +144,12 @@ const handleSummarize = async (req, res) => {
       return res.status(200).json({ success: true, ...emptyObj, current: emptyObj });
     }
 
-    const promptText = `Analyze this journal entry and respond strictly in raw JSON with these exact key names:
+    let moodValue = '';
+    let summaryValue = '';
+    let tipValue = '';
+
+    if (apiKey) {
+      const promptText = `Analyze this journal entry and respond strictly in raw JSON with these exact key names:
 {
   "mood": "Single-word detected emotion (e.g., Happy, Stressed, Reflective, Accomplished, Anxious, Calm)",
   "summary": "A 2-sentence supportive summary of the entry.",
@@ -142,33 +158,27 @@ const handleSummarize = async (req, res) => {
 
 Journal Entry: "${entry}"`;
 
-    let rawText = '';
-    try {
-      rawText = await callGeminiSDK(apiKey, promptText);
-    } catch (aiErr) {
-      rawText = JSON.stringify({
-        mood: "Reflective",
-        summary: `Analyzed reflection: "${entry}".`,
-        tip: "Keep reflecting daily."
-      });
+      try {
+        let rawText = await callGeminiSDK(apiKey, promptText);
+        rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+        const parsed = JSON.parse(rawText);
+        
+        moodValue = parsed.mood || 'Reflective';
+        summaryValue = parsed.summary || `Summary: ${entry}`;
+        tipValue = parsed.tip || 'Keep up your daily reflection habit.';
+      } catch (aiErr) {
+        console.warn('Gemini API Quota reached/Error. Falling back to local analyzer:', aiErr.message);
+        const offline = generateOfflineAnalysis(entry);
+        moodValue = offline.mood;
+        summaryValue = offline.summary;
+        tipValue = offline.tip;
+      }
+    } else {
+      const offline = generateOfflineAnalysis(entry);
+      moodValue = offline.mood;
+      summaryValue = offline.summary;
+      tipValue = offline.tip;
     }
-
-    rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-
-    let parsed;
-    try {
-      parsed = JSON.parse(rawText);
-    } catch (e) {
-      parsed = {
-        mood: "Reflective",
-        summary: rawText,
-        tip: "Take deep breaths and focus on one step at a time."
-      };
-    }
-
-    const moodValue = parsed.mood || 'Reflective';
-    const summaryValue = parsed.summary || 'Reflection analyzed successfully.';
-    const tipValue = parsed.tip || 'Keep up the daily journaling habit.';
 
     if (db) {
       try {
@@ -216,16 +226,14 @@ Journal Entry: "${entry}"`;
     return res.status(200).json(responsePayload);
   } catch (error) {
     console.error('Analyze API Error:', error);
-    const fallbackObj = { 
-      mood: 'Reflective', 
-      summary: 'Reflection recorded.', 
-      tip: 'Keep up the practice.',
-      actionableTip: 'Keep up the practice.',
-      actionable_tip: 'Keep up the practice.'
-    };
+    const fallbackObj = generateOfflineAnalysis(req.body.entry || '');
     return res.status(200).json({
       success: true,
-      ...fallbackObj,
+      mood: fallbackObj.mood,
+      summary: fallbackObj.summary,
+      tip: fallbackObj.tip,
+      actionableTip: fallbackObj.tip,
+      actionable_tip: fallbackObj.tip,
       current: fallbackObj
     });
   }
@@ -236,7 +244,7 @@ app.post('/api/analyze-mood', handleSummarize);
 app.post('/api/analyze', handleSummarize);
 app.post('/api/journal', handleSummarize);
 
-// 3. HISTORY ENDPOINTS (Updated with full key aliases)
+// 3. HISTORY ENDPOINT
 const handleHistory = async (req, res) => {
   try {
     if (!db) {
@@ -268,7 +276,6 @@ const handleHistory = async (req, res) => {
 
         entries.push({
           id: doc.id,
-          // User text aliases
           userEntry: userText,
           entry: userText,
           prompt: userText,
@@ -276,14 +283,10 @@ const handleHistory = async (req, res) => {
           message: userText,
           content: userText,
           reflection: userText,
-          
-          // AI output aliases
           aiResponse: aiText,
           summary: aiText,
           response: aiText,
           reply: aiText,
-          
-          // Metadata aliases
           mood: moodText,
           tag: moodText,
           tip: tipText,
