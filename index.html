@@ -222,10 +222,12 @@
         }
 
         list.forEach(item => {
-          // Safeguard every property check so undefined can never be rendered as text
-          const entryText = item.userEntry || item.entry || item.prompt || item.text || item.message || item.reflection || 'No entry text recorded';
-          const aiText = item.aiResponse || item.summary || item.response || item.reply || item.tip || 'No AI response recorded';
-          const dateDisplay = item.date || item.createdAt || item.created_at || item.timestamp || 'Recently';
+          // Helper to pick the first non-empty string
+          const pickValid = (...args) => args.find(v => typeof v === 'string' && v.trim() !== '') || 'N/A';
+
+          const entryText = pickValid(item.userEntry, item.entry, item.prompt, item.text, item.message, item.reflection);
+          const aiText = pickValid(item.aiResponse, item.summary, item.reply, item.response, item.tip);
+          const dateDisplay = pickValid(item.date, item.createdAt, item.created_at, item.timestamp);
           
           container.innerHTML += `
             <div class="history-item">
