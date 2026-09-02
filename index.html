@@ -6,38 +6,109 @@
   <title>Personal Gemini Journal & AI Companion</title>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --bg-color: #f4f6fb; --card-bg: #ffffff; --primary: #4f46e5; --text-main: #0f172a; --text-muted: #64748b; --border: #e2e8f0; }
+    :root {
+      --bg-color: #f4f6fb;
+      --card-bg: #ffffff;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --secondary: #10b981;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --user-msg: #4f46e5;
+      --bot-msg: #f1f5f9;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; min-height: 100vh; padding: 24px; }
+    
     .app-container { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 20px; }
-    .card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border); padding: 24px; }
-    #chat-box { height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
-    .msg { max-width: 78%; padding: 12px 16px; border-radius: 14px; font-size: 0.95rem; }
-    .user { background: var(--primary); color: white; align-self: flex-end; }
-    .bot { background: #f1f5f9; color: var(--text-main); align-self: flex-start; border: 1px solid var(--border); }
-    textarea { width: 100%; height: 80px; padding: 14px; border-radius: 12px; border: 1px solid var(--border); outline: none; resize: none; }
-    .button-group { display: flex; gap: 10px; margin-top: 12px; }
-    button { padding: 12px 20px; border-radius: 10px; border: none; font-weight: 600; cursor: pointer; flex: 1; }
+    .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
+    .header h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-main); letter-spacing: -0.02em; }
+    
+    .card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border); padding: 24px; box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05); transition: all 0.2s ease; }
+    
+    #auth-panel { text-align: center; padding: 40px 20px; }
+    #auth-panel p { color: var(--text-muted); margin-bottom: 20px; }
+    
+    .user-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .user-info { font-size: 0.9rem; color: var(--text-muted); }
+    .user-info strong { color: var(--text-main); }
+    .status-dot { display: inline-block; width: 8px; height: 8px; background: var(--secondary); border-radius: 50%; margin-right: 6px; }
+
+    #chat-box { height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 8px; margin-bottom: 16px; }
+    .msg { max-width: 78%; padding: 12px 16px; border-radius: 14px; font-size: 0.95rem; line-height: 1.5; word-wrap: break-word; }
+    .user { background: var(--user-msg); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .bot { background: var(--bot-msg); color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
+
+    .input-area { display: flex; flex-direction: column; gap: 12px; }
+    textarea { width: 100%; height: 80px; padding: 14px; border-radius: 12px; border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; outline: none; transition: border-color 0.2s; resize: none; }
+    textarea:focus { border-color: var(--primary); }
+    
+    .button-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    button { padding: 12px 20px; border-radius: 10px; border: none; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; flex: 1; }
     .btn-primary { background: var(--primary); color: white; }
-    .btn-tertiary { background: #e0e7ff; color: #4338ca; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .btn-secondary:hover { background: #d1fae5; }
+    .btn-tertiary { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; }
+    .btn-tertiary:hover { background: #c7d2fe; }
+
+    #analytics-panel h3, #history-panel h3 { font-size: 1.1rem; margin-bottom: 16px; }
+    .badge { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 20px; background: #e0e7ff; color: var(--primary); font-weight: 700; font-size: 0.85rem; margin-left: 8px; }
+    .analytics-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
+    .data-box { background: var(--bg-color); padding: 14px; border-radius: 10px; border: 1px solid var(--border); }
+    .data-box label { display: block; font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
+    .data-box p { font-size: 0.95rem; color: var(--text-main); font-weight: 500; }
+    
     .history-item { background: var(--bg-color); padding: 16px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 12px; }
-    .history-date { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px; }
+    .history-item p { margin-bottom: 8px; font-size: 0.95rem; }
+    .history-item p:last-child { margin-bottom: 0; }
+    .history-date { font-size: 0.8rem !important; color: var(--text-muted); margin-bottom: 8px !important; }
   </style>
 </head>
 <body>
   <div class="app-container">
-    <div id="auth-panel" class="card" style="text-align: center;">
-      <p>Sign in with Google to use your journal</p>
-      <button id="btn-login" class="btn-primary" style="margin-top: 15px;">Sign in with Google</button>
+    <div class="header">
+      <h1>Gemini Journal</h1>
+    </div>
+
+    <div id="auth-panel" class="card">
+      <p>Sign in with your Google account to access your personal journal assistant</p>
+      <button id="btn-login" class="btn-primary">Sign in with Google</button>
     </div>
 
     <div id="app-panel" style="display:none;">
       <div class="card">
+        <div class="user-bar">
+          <div class="user-info">
+            <span class="status-dot"></span> Logged in as: <strong id="user-email"></strong>
+          </div>
+        </div>
+
         <div id="chat-box"></div>
-        <textarea id="user-input" placeholder="Write your reflection..."></textarea>
-        <div class="button-group">
-          <button id="btn-send" class="btn-primary">Send Message</button>
-          <button id="btn-history" class="btn-tertiary">View Past Reflections</button>
+
+        <div class="input-area">
+          <textarea id="user-input" placeholder="Reflect on your day or ask Gemini for journaling advice..."></textarea>
+          <div class="button-group">
+            <button id="btn-send" class="btn-primary">Send Message</button>
+            <button id="btn-analyze" class="btn-secondary">Analyze Mood</button>
+            <button id="btn-history" class="btn-tertiary">View Past Reflections</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="analytics-panel" class="card" style="display:none; margin-top: 20px;">
+        <h3>Mood & Reflection Insights <span id="mood-badge" class="badge">Reflective</span></h3>
+        <div class="analytics-grid">
+          <div class="data-box">
+            <label>Summary</label>
+            <p id="summary-text">-</p>
+          </div>
+          <div class="data-box">
+            <label>Actionable Tip</label>
+            <p id="tip-text">-</p>
+          </div>
         </div>
       </div>
 
@@ -69,6 +140,7 @@
         currentUid = user.uid;
         document.getElementById('auth-panel').style.display = 'none';
         document.getElementById('app-panel').style.display = 'block';
+        document.getElementById('user-email').innerText = user.email;
       }
     });
 
@@ -88,42 +160,79 @@
           body: JSON.stringify({ message, uid: currentUid })
         });
         const data = await res.json();
-        chatBox.innerHTML += `<div class="msg bot">${data.reply || data.response}</div>`;
+        chatBox.innerHTML += `<div class="msg bot">${data.reply || data.response || 'Message logged.'}</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
       } catch (err) {
-        chatBox.innerHTML += `<div class="msg bot">Server error.</div>`;
+        chatBox.innerHTML += `<div class="msg bot">Could not reach backend server.</div>`;
+      }
+    };
+
+    document.getElementById('btn-analyze').onclick = async () => {
+      const input = document.getElementById('user-input');
+      const entry = input.value.trim();
+      if (!entry || !currentUid) {
+        alert("Please write a reflection in the text box first.");
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entry, uid: currentUid })
+        });
+        const data = await res.json();
+        
+        document.getElementById('analytics-panel').style.display = 'block';
+        document.getElementById('history-panel').style.display = 'none';
+        
+        document.getElementById('mood-badge').innerText = data.mood || data.current?.mood || 'Reflective';
+        document.getElementById('summary-text').innerText = data.summary || data.current?.summary || '-';
+        document.getElementById('tip-text').innerText = data.tip || data.actionableTip || data.actionable_tip || data.current?.tip || '-';
+      } catch (err) {
+        alert("Failed to analyze reflection.");
       }
     };
 
     document.getElementById('btn-history').onclick = async () => {
       if (!currentUid) return;
+      
       const container = document.getElementById('history-container');
-      container.innerHTML = '<p>Loading...</p>';
+      container.innerHTML = '<p>Loading your past reflections...</p>';
+      
       document.getElementById('history-panel').style.display = 'block';
+      document.getElementById('analytics-panel').style.display = 'none';
 
       try {
         const res = await fetch(`/api/history?uid=${currentUid}`);
         const data = await res.json();
+        
         container.innerHTML = '';
 
-        if (!data.history || data.history.length === 0) {
-          container.innerHTML = '<p>No history found.</p>';
+        const list = data.history || data.journals || data.entries || data.reflections || [];
+
+        if (!list || list.length === 0) {
+          container.innerHTML = '<p>No past reflections found.</p>';
           return;
         }
 
-        data.history.forEach(item => {
-          const entryVal = item.userEntry || item.entry || 'N/A';
-          const aiVal = item.aiResponse || item.response || 'N/A';
+        list.forEach(item => {
+          const pickValid = (...args) => args.find(v => typeof v === 'string' && v.trim() !== '') || 'N/A';
+
+          const entryText = pickValid(item.userEntry, item.entry, item.prompt, item.text, item.message, item.reflection);
+          const aiText = pickValid(item.aiResponse, item.summary, item.reply, item.response, item.tip);
+          const dateDisplay = pickValid(item.date, item.createdAt, item.created_at, item.timestamp);
           
           container.innerHTML += `
             <div class="history-item">
-              <p class="history-date">${item.date || 'Recently'}</p>
-              <p><strong>YOUR ENTRY:</strong> ${entryVal}</p>
-              <p><strong>GEMINI RESPONSE:</strong> ${aiVal}</p>
+              <p class="history-date">${dateDisplay}</p>
+              <p><strong>YOUR ENTRY:</strong> ${entryText}</p>
+              <p><strong>GEMINI RESPONSE:</strong> ${aiText}</p>
             </div>
           `;
         });
       } catch (err) {
-        container.innerHTML = '<p>Error loading history.</p>';
+        container.innerHTML = '<p>Failed to load history.</p>';
       }
     };
   </script>
