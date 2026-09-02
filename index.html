@@ -165,7 +165,7 @@
           body: JSON.stringify({ message, uid: currentUid })
         });
         const data = await res.json();
-        chatBox.innerHTML += `<div class="msg bot">${data.reply || data.response}</div>`;
+        chatBox.innerHTML += `<div class="msg bot">${data.reply || data.response || 'Message logged.'}</div>`;
         chatBox.scrollTop = chatBox.scrollHeight;
       } catch (err) {
         chatBox.innerHTML += `<div class="msg bot">Could not reach backend server.</div>`;
@@ -214,19 +214,22 @@
         
         container.innerHTML = '';
 
-        if (!data.history || data.history.length === 0) {
+        const list = data.history || data.journals || data.entries || data.reflections || [];
+
+        if (!list || list.length === 0) {
           container.innerHTML = '<p>No past reflections found.</p>';
           return;
         }
 
-        data.history.forEach(item => {
-          // Safely grab whichever keys the backend returned so it never shows undefined
-          const entryText = item.userEntry || item.entry || 'N/A';
-          const aiText = item.aiResponse || item.summary || item.response || 'N/A';
+        list.forEach(item => {
+          // Safeguard every property check so undefined can never be rendered as text
+          const entryText = item.userEntry || item.entry || item.prompt || item.text || item.message || item.reflection || 'No entry text recorded';
+          const aiText = item.aiResponse || item.summary || item.response || item.reply || item.tip || 'No AI response recorded';
+          const dateDisplay = item.date || item.createdAt || item.created_at || item.timestamp || 'Recently';
           
           container.innerHTML += `
             <div class="history-item">
-              <p class="history-date">${item.date || 'Recently'}</p>
+              <p class="history-date">${dateDisplay}</p>
               <p><strong>YOUR ENTRY:</strong> ${entryText}</p>
               <p><strong>GEMINI RESPONSE:</strong> ${aiText}</p>
             </div>
