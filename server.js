@@ -27,28 +27,14 @@ try {
   console.error('Firebase initialization error:', error.message);
 }
 
-// Helper function with automatic model fallback
+// SDK helper targeting gemini-3.6-flash
 async function callGeminiSDK(apiKey, promptText) {
   const ai = new GoogleGenAI({ apiKey });
-  const targetModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-  let lastError = null;
-
-  for (const modelName of targetModels) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: promptText,
-      });
-      if (response && response.text) {
-        return response.text;
-      }
-    } catch (err) {
-      console.warn(`Model ${modelName} call failed:`, err.message);
-      lastError = err;
-    }
-  }
-
-  throw lastError || new Error('All model endpoints failed.');
+  const response = await ai.models.generateContent({
+    model: 'gemini-3.6-flash',
+    contents: promptText,
+  });
+  return response.text;
 }
 
 // 1. CHAT ENDPOINT
