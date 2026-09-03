@@ -34,23 +34,25 @@ async function getGeminiResponse(promptText) {
   return result.response.text();
 }
 
-// 1. Chat Endpoint
+// 1. Chat Endpoint (/api/chat)
 app.post('/api/chat', async (req, res) => {
   try {
     const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || '';
+    const uid = req.body.uid || req.body.userId || 'anonymous';
+    
     if (!message) {
-      return res.status(200).json({ success: true, reply: 'Message empty.', response: 'Message empty.' });
+      return res.status(400).json({ error: 'Message text required' });
     }
 
     let responseText = '';
     try {
-      responseText = await getGeminiResponse(`Respond conversationally to this journal entry: "${message}"`);
+      responseText = await getGeminiResponse(`You are a supportive, warm personal AI companion for journaling. Respond helpfully and conversationally to: "${message}"`);
     } catch (aiErr) {
-      responseText = `Received entry: "${message}"`;
+      console.error('Gemini API Error:', aiErr.message);
+      responseText = `I hear you on that. Thanks for sharing your reflection today!`;
     }
 
     if (db) {
-      const uid = req.body.uid || req.body.userId || 'anonymous';
       await db.collection('journals').add({
         uid,
         entry: message,
@@ -61,53 +63,32 @@ app.post('/api/chat', async (req, res) => {
 
     return res.status(200).json({ success: true, reply: responseText, response: responseText });
   } catch (error) {
-    return res.status(200).json({ success: true, reply: 'Entry saved.', response: 'Entry saved.' });
+    console.error('Chat endpoint error:', error);
+    return res.status(500).json({ error: 'Failed to process chat message' });
   }
 });
 
-// 2. Journal Endpoint
-app.post('/api/journal', async (req, res) => {
-  try {
-    const { message } = req.body;
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
-
-    const responseText = await getGeminiResponse(`Analyze the following journal entry. Provide a thoughtful response followed by a detected primary mood (e.g., Happy, Stressed, Reflective, Accomplished):\n\nEntry: "${message}"`);
-
-    if (db) {
-      await db.collection('journals').add({
-        entry: message,
-        response: responseText,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
-      });
-    }
-
-    return res.status(200).json({ success: true, analysis: responseText });
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to generate response.', details: error.message });
-  }
-});
-
-// 3. Analyze Mood & Summarize Endpoint
-const handleMood = async (req, res) => {
+// 2. Summarize & Mood Analysis Endpoint (/api/summarize)
+app.post('/api/summarize', async (req, res) => {
   try {
     const entry = req.body.entry || req.body.message || req.body.text || '';
+    const uid = req.body.uid || req.body.userId || 'anonymous';
+
     if (!entry) {
       return res.status(400).json({ error: 'Entry text required' });
     }
 
-    const prompt = `Analyze this journal entry and respond ONLY with valid JSON (no markdown formatting):
+    const prompt = `Analyze this journal entry and respond ONLY with valid JSON using exactly these keys: "mood", "summary", and "tip". Do not use markdown backticks.
 {
-  "mood": "Single word mood (e.g. Reflective, Happy, Anxious)",
+  "mood": "Single word mood (e.g. Reflective, Happy, Anxious, Accomplished)",
   "summary": "Brief 1-2 sentence summary",
   "tip": "Short actionable tip"
 }
 Entry: "${entry}"`;
 
     let mood = 'Reflective';
-    let summary = 'Reflection recorded.';
-    let tip = 'Keep expressing your thoughts.';
+    let summary = `Entry: ${entry.substring(0, 60)}...`;
+    let tip = 'Take a moment to breathe and focus on your goals.';
 
     try {
       const aiRaw = await getGeminiResponse(prompt);
@@ -117,11 +98,12 @@ Entry: "${entry}"`;
       if (parsed.summary) summary = parsed.summary;
       if (parsed.tip) tip = parsed.tip;
     } catch (e) {
-      summary = `Entry: ${entry.substring(0, 40)}...`;
+      console.error('JSON parse fallback used:', e.message);
     }
 
     if (db) {
       await db.collection('journals').add({
+        uid,
         entry,
         mood,
         summary,
@@ -132,24 +114,39 @@ Entry: "${entry}"`;
 
     return res.status(200).json({ success: true, mood, summary, tip });
   } catch (err) {
-    return res.status(500).json({ error: 'Analysis failed' });
+    return res.status(500).json({ error: 'Analysis failed', details: err.message });
   }
-};
+});
 
-app.post('/api/analyze-mood', handleMood);
-app.post('/api/summarize', handleMood);
-
-// 4. History Endpoint
+// 3. History Endpoint (/api/history)
 app.get('/api/history', async (req, res) => {
   try {
+    const uid = req.query.uid;
     if (!db) return res.status(200).json({ success: true, history: [] });
-    const snapshot = await db.collection('journals').orderBy('timestamp', 'desc').limit(20).get();
+
+    let query = db.collection('journals').orderBy('timestamp', 'desc');
+    if (uid) {
+      query = query.where('uid', '==', uid);
+    }
+    
+    const snapshot = await query.limit(20).get();
     const entries = [];
     snapshot.forEach(doc => {
-      entries.push({ id: doc.id, ...doc.data() });
+      const data = doc.data();
+      let formattedDate = 'Recent Reflection';
+      if (data.timestamp && data.timestamp.toDate) {
+        formattedDate = data.timestamp.toDate().toLocaleString();
+      }
+      entries.push({ 
+        id: doc.id, 
+        ...data, 
+        date: formattedDate 
+      });
     });
-    return res.status(200).json({ success: true, history: entries, entries });
+
+    return res.status(200).json({ success: true, history: entries, journals: entries });
   } catch (err) {
+    console.error('History fetch error:', err);
     return res.status(200).json({ success: true, history: [] });
   }
 });
