@@ -3,266 +3,252 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Personal Gemini Journal</title>
+  <title>Personal Gemini Journal & AI Companion</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
+      --bg-color: #f4f6fb;
+      --card-bg: #ffffff;
       --primary: #4f46e5;
       --primary-hover: #4338ca;
-      --bg-slate: #f8fafc;
-      --surface: #ffffff;
+      --secondary: #10b981;
       --text-main: #0f172a;
       --text-muted: #64748b;
       --border: #e2e8f0;
+      --user-msg: #4f46e5;
+      --bot-msg: #f1f5f9;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; min-height: 100vh; padding: 24px; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background-color: var(--bg-slate);
-      color: var(--text-main);
-      display: flex;
-      justify-content: center;
-      padding: 30px 15px;
-      min-height: 100vh;
-    }
+    .app-container { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 20px; }
+    .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
+    .header h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-main); letter-spacing: -0.02em; }
 
-    .container {
-      width: 100%;
-      max-width: 900px;
-      background: var(--surface);
-      padding: 35px;
-      border-radius: 12px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-      border: 1px solid var(--border);
-    }
+    .card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border); padding: 24px; box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05); transition: all 0.2s ease; }
 
-    header {
-      margin-bottom: 25px;
-      border-bottom: 2px solid var(--bg-slate);
-      padding-bottom: 15px;
-    }
+    #auth-panel { text-align: center; padding: 40px 20px; }
+    #auth-panel p { color: var(--text-muted); margin-bottom: 20px; }
 
-    h2 { font-size: 1.75rem; font-weight: 700; color: var(--text-main); }
-    p.subtitle { color: var(--text-muted); font-size: 0.95rem; margin-top: 5px; }
+    .user-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .user-info { font-size: 0.9rem; color: var(--text-muted); }
+    .user-info strong { color: var(--text-main); }
+    .status-dot { display: inline-block; width: 8px; height: 8px; background: var(--secondary); border-radius: 50%; margin-right: 6px; }
 
-    .auth-box {
-      max-width: 400px;
-      margin: 40px auto;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
+    #chat-box { height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 8px; margin-bottom: 16px; }
+    .msg { max-width: 78%; padding: 12px 16px; border-radius: 14px; font-size: 0.95rem; line-height: 1.5; word-wrap: break-word; }
+    .user { background: var(--user-msg); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .bot { background: var(--bot-msg); color: var(--text-main); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
 
-    input, textarea {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 0.95rem;
-      outline: none;
-      transition: border-color 0.2s;
-    }
+    .input-area { display: flex; flex-direction: column; gap: 12px; }
+    textarea { width: 100%; height: 80px; padding: 14px; border-radius: 12px; border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; outline: none; transition: border-color 0.2s; resize: none; }
+    textarea:focus { border-color: var(--primary); }
 
-    input:focus, textarea:focus {
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-    }
+    .button-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    button { padding: 12px 20px; border-radius: 10px; border: none; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; flex: 1; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .btn-secondary:hover { background: #d1fae5; }
+    .btn-tertiary { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; }
+    .btn-tertiary:hover { background: #c7d2fe; }
 
-    textarea { height: 120px; resize: vertical; margin-bottom: 15px; font-family: inherit; }
+    #analytics-panel h3, #history-panel h3 { font-size: 1.1rem; margin-bottom: 16px; }
+    .badge { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 20px; background: #e0e7ff; color: var(--primary); font-weight: 700; font-size: 0.85rem; margin-left: 8px; }
+    .analytics-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
+    .data-box { background: var(--bg-color); padding: 14px; border-radius: 10px; border: 1px solid var(--border); }
+    .data-box label { display: block; font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
+    .data-box p { font-size: 0.95rem; color: var(--text-main); font-weight: 500; }
 
-    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
-
-    button {
-      padding: 10px 18px;
-      background-color: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 0.9rem;
-      cursor: pointer;
-      transition: background-color 0.2s, transform 0.1s;
-    }
-
-    button:hover { background-color: var(--primary-hover); }
-    button:active { transform: scale(0.98); }
-
-    .btn-secondary { background-color: #64748b; }
-    .btn-secondary:hover { background-color: #475569; }
-
-    .btn-danger { background-color: #ef4444; }
-    .btn-danger:hover { background-color: #dc2626; }
-
-    #user-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background-color: var(--bg-slate);
-      padding: 12px 16px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      font-weight: 600;
-      color: var(--text-main);
-      border: 1px solid var(--border);
-    }
-
-    .output-card {
-      background-color: var(--bg-slate);
-      border-left: 4px solid var(--primary);
-      padding: 18px;
-      border-radius: 6px;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      margin-top: 15px;
-      font-size: 0.95rem;
-      line-height: 1.5;
-    }
-
-    .grid-history { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
-
-    .history-card {
-      background: white;
-      border: 1px solid var(--border);
-      padding: 16px;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-    }
-
-    .history-card h4 { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px; }
-    .history-card p { font-size: 0.95rem; color: var(--text-main); margin-bottom: 10px; }
+    .history-item { background: var(--bg-color); padding: 16px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 12px; }
+    .history-item p { margin-bottom: 8px; font-size: 0.95rem; }
+    .history-item p:last-child { margin-bottom: 0; }
+    .history-date { font-size: 0.8rem !important; color: var(--text-muted); margin-bottom: 8px !important; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h2>Personal Gemini Journal</h2>
-      <p class="subtitle">Secure, authenticated reflection assistant powered by Gemini API</p>
-    </header>
-
-    <div id="auth-section" class="auth-box">
-      <h3>Sign In to Your Workspace</h3>
-      <input type="email" id="email" placeholder="Email Address">
-      <input type="password" id="password" placeholder="Password">
-      <button onclick="loginUser()">Sign In / Launch Session</button>
+  <div class="app-container">
+    <div class="header">
+      <h1>Gemini Journal</h1>
     </div>
 
-    <div id="app-section" style="display: none;">
-      <div id="user-bar">
-        <span>Active User: <span id="user-email" style="color: var(--primary);"></span></span>
-        <button class="btn-danger" onclick="logoutUser()">Logout</button>
+    <div id="auth-panel" class="card">
+      <p>Sign in with your Google account to access your personal journal assistant</p>
+      <button id="btn-login" class="btn-primary">Sign in with Google</button>
+    </div>
+
+    <div id="app-panel" style="display:none;">
+      <div class="card">
+        <div class="user-bar">
+          <div class="user-info">
+            <span class="status-dot"></span> Logged in as: <strong id="user-email"></strong>
+          </div>
+        </div>
+
+        <div id="chat-box"></div>
+
+        <div class="input-area">
+          <textarea id="user-input" placeholder="Reflect on your day or ask Gemini for journaling advice..."></textarea>
+          <div class="button-group">
+            <button id="btn-send" class="btn-primary">Send Message</button>
+            <button id="btn-analyze" class="btn-secondary">Analyze Mood</button>
+            <button id="btn-history" class="btn-tertiary">View Past Reflections</button>
+          </div>
+        </div>
       </div>
 
-      <textarea id="message" placeholder="Write your daily thoughts or brainstorming questions..."></textarea>
-      
-      <div class="btn-group">
-        <button onclick="sendMessage()">Send Message</button>
-        <button onclick="analyzeMood()">Analyze Mood</button>
-        <button class="btn-secondary" onclick="loadHistory()">View Past Reflections</button>
+      <div id="analytics-panel" class="card" style="display:none; margin-top: 20px;">
+        <h3>Mood & Reflection Insights <span id="mood-badge" class="badge">Reflective</span></h3>
+        <div class="analytics-grid">
+          <div class="data-box">
+            <label>Summary</label>
+            <p id="summary-text">-</p>
+          </div>
+          <div class="data-box">
+            <label>Actionable Tip</label>
+            <p id="tip-text">-</p>
+          </div>
+        </div>
       </div>
-      
-      <div class="output-card" id="output">Output will appear here...</div>
-      <div id="history-section" class="grid-history"></div>
+
+      <div id="history-panel" class="card" style="display:none; margin-top: 20px;">
+        <h3>Past Reflection History</h3>
+        <div id="history-container"></div>
+      </div>
     </div>
   </div>
 
-  <script>
-    let activeUserEmail = "";
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-    function loginUser() {
-      const email = document.getElementById('email').value.trim();
-      if (!email) {
-        alert("Please enter a valid email address.");
+    const firebaseConfig = {
+      apiKey: "AIzaSyAn1jFHlGpPo0AXwcCKol7KU6MJ0t994sQ",
+      authDomain: "personal-gemini-journal-506905.firebaseapp.com",
+      projectId: "personal-gemini-journal-506905"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    let currentUser = null;
+
+    async function authedFetch(url, options = {}) {
+      if (!currentUser) throw new Error('Not signed in');
+      const token = await currentUser.getIdToken();
+      const headers = {
+        ...(options.headers || {}),
+        'Authorization': `Bearer ${token}`
+      };
+      return fetch(url, { ...options, headers });
+    }
+
+    document.getElementById('btn-login').onclick = () => signInWithPopup(auth, new GoogleAuthProvider());
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        currentUser = user;
+        document.getElementById('auth-panel').style.display = 'none';
+        document.getElementById('app-panel').style.display = 'block';
+        document.getElementById('user-email').innerText = user.email;
+      } else {
+        currentUser = null;
+        document.getElementById('auth-panel').style.display = 'block';
+        document.getElementById('app-panel').style.display = 'none';
+      }
+    });
+
+    document.getElementById('btn-send').onclick = async () => {
+      const input = document.getElementById('user-input');
+      const message = input.value.trim();
+      if (!message || !currentUser) return;
+
+      const chatBox = document.getElementById('chat-box');
+      chatBox.innerHTML += `<div class="msg user">${message}</div>`;
+      input.value = '';
+
+      try {
+        const res = await authedFetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        chatBox.innerHTML += `<div class="msg bot">${data.reply || data.response || 'Message logged.'}</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+      } catch (err) {
+        chatBox.innerHTML += `<div class="msg bot">Could not reach backend server.</div>`;
+      }
+    };
+
+    document.getElementById('btn-analyze').onclick = async () => {
+      const input = document.getElementById('user-input');
+      const entry = input.value.trim();
+      if (!entry || !currentUser) {
+        alert("Please write a reflection in the text box first.");
         return;
       }
-      activeUserEmail = email;
-      document.getElementById('user-email').innerText = activeUserEmail;
-      
-      document.getElementById('email').value = '';
-      document.getElementById('password').value = '';
-      document.getElementById('message').value = '';
-      document.getElementById('output').innerText = 'Output will appear here...';
-      document.getElementById('history-section').innerHTML = '';
 
-      document.getElementById('auth-section').style.display = 'none';
-      document.getElementById('app-section').style.display = 'block';
-    }
-
-    function logoutUser() {
-      const confirmLogout = confirm("Are you sure you want to log out?");
-      if (confirmLogout) {
-        activeUserEmail = "";
-        document.getElementById('auth-section').style.display = 'block';
-        document.getElementById('app-section').style.display = 'none';
-      }
-    }
-
-    async function sendMessage() {
-      const msg = document.getElementById('message').value.trim();
-      const outputDiv = document.getElementById('output');
-      if (!msg) return alert("Please enter a reflection message.");
-
-      outputDiv.innerText = "Processing response...";
       try {
-        const res = await fetch('/api/chat', {
+        const res = await authedFetch('/api/summarize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg, userId: activeUserEmail })
+          body: JSON.stringify({ entry })
         });
         const data = await res.json();
-        outputDiv.innerText = data.response || data.error;
+
+        document.getElementById('analytics-panel').style.display = 'block';
+        document.getElementById('history-panel').style.display = 'none';
+
+        document.getElementById('mood-badge').innerText = data.mood || data.current?.mood || 'Reflective';
+        document.getElementById('summary-text').innerText = data.summary || data.current?.summary || '-';
+        document.getElementById('tip-text').innerText = data.tip || data.actionableTip || data.actionable_tip || data.current?.tip || '-';
       } catch (err) {
-        outputDiv.innerText = "Error connecting to server.";
+        alert("Failed to analyze reflection.");
       }
-    }
+    };
 
-    async function analyzeMood() {
-      const msg = document.getElementById('message').value.trim();
-      const outputDiv = document.getElementById('output');
-      if (!msg) return alert("Please enter a message to analyze.");
+    document.getElementById('btn-history').onclick = async () => {
+      if (!currentUser) return;
 
-      outputDiv.innerText = "Analyzing entry...";
-      try {
-        const res = await fetch('/api/analyze-mood', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg, userId: activeUserEmail })
-        });
-        const data = await res.json();
-        outputDiv.innerText = data.error ? `Error: ${data.error}` : `Mood Tag: ${data.mood}\n\nSummary: ${data.summary}\n\nActionable Tip: ${data.actionable_tip}`;
-      } catch (err) {
-        outputDiv.innerText = "Failed to analyze reflection.";
-      }
-    }
+      const container = document.getElementById('history-container');
+      container.innerHTML = '<p>Loading your past reflections...</p>';
 
-    async function loadHistory() {
-      const historyDiv = document.getElementById('history-section');
-      historyDiv.innerHTML = "<p>Loading past entries...</p>";
+      document.getElementById('history-panel').style.display = 'block';
+      document.getElementById('analytics-panel').style.display = 'none';
 
       try {
-        const res = await fetch(`/api/history?userId=${encodeURIComponent(activeUserEmail)}`);
+        const res = await authedFetch('/api/history');
         const data = await res.json();
 
-        if (data.journals && data.journals.length > 0) {
-          historyDiv.innerHTML = "<h3 style='margin-top:15px;'>Past Reflection History</h3>";
-          data.journals.forEach(entry => {
-            const card = document.createElement('div');
-            card.className = 'history-card';
-            card.innerHTML = `
-              <h4>Your Entry:</h4>
-              <p>${entry.user_message}</p>
-              <h4>Gemini Response:</h4>
-              <p style="margin-bottom:0;">${entry.bot_response}</p>
-            `;
-            historyDiv.appendChild(card);
-          });
-        } else {
-          historyDiv.innerHTML = "<p style='color: var(--text-muted);'>No past entries found for this user profile.</p>";
+        container.innerHTML = '';
+
+        const list = data.history || data.journals || data.entries || data.reflections || [];
+
+        if (!list || list.length === 0) {
+          container.innerHTML = '<p>No past reflections found.</p>';
+          return;
         }
+
+        list.forEach(item => {
+          const pickValid = (...args) => args.find(v => typeof v === 'string' && v.trim() !== '') || 'N/A';
+
+          const entryText = pickValid(item.userEntry, item.entry, item.prompt, item.text, item.message, item.reflection);
+          const aiText = pickValid(item.aiResponse, item.summary, item.reply, item.response, item.tip);
+          const dateDisplay = pickValid(item.date, item.createdAt, item.created_at, item.timestamp);
+
+          container.innerHTML += `
+            <div class="history-item">
+              <p class="history-date">${dateDisplay}</p>
+              <p><strong>YOUR ENTRY:</strong> ${entryText}</p>
+              <p><strong>GEMINI RESPONSE:</strong> ${aiText}</p>
+            </div>
+          `;
+        });
       } catch (err) {
-        historyDiv.innerHTML = "<p>Error loading history.</p>";
+        container.innerHTML = '<p>Failed to load history.</p>';
       }
-    }
+    };
   </script>
 </body>
 </html>
