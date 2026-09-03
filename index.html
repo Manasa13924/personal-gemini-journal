@@ -21,16 +21,16 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; min-height: 100vh; padding: 24px; }
-    
+
     .app-container { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 20px; }
     .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
     .header h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-main); letter-spacing: -0.02em; }
-    
+
     .card { background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border); padding: 24px; box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05); transition: all 0.2s ease; }
-    
+
     #auth-panel { text-align: center; padding: 40px 20px; }
     #auth-panel p { color: var(--text-muted); margin-bottom: 20px; }
-    
+
     .user-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
     .user-info { font-size: 0.9rem; color: var(--text-muted); }
     .user-info strong { color: var(--text-main); }
@@ -44,7 +44,7 @@
     .input-area { display: flex; flex-direction: column; gap: 12px; }
     textarea { width: 100%; height: 80px; padding: 14px; border-radius: 12px; border: 1px solid var(--border); font-family: inherit; font-size: 0.95rem; outline: none; transition: border-color 0.2s; resize: none; }
     textarea:focus { border-color: var(--primary); }
-    
+
     .button-group { display: flex; gap: 10px; flex-wrap: wrap; }
     button { padding: 12px 20px; border-radius: 10px; border: none; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; flex: 1; }
     .btn-primary { background: var(--primary); color: white; }
@@ -60,7 +60,7 @@
     .data-box { background: var(--bg-color); padding: 14px; border-radius: 10px; border: 1px solid var(--border); }
     .data-box label { display: block; font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
     .data-box p { font-size: 0.95rem; color: var(--text-main); font-weight: 500; }
-    
+
     .history-item { background: var(--bg-color); padding: 16px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 12px; }
     .history-item p { margin-bottom: 8px; font-size: 0.95rem; }
     .history-item p:last-child { margin-bottom: 0; }
@@ -131,33 +131,47 @@
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    let currentUid = null;
+    let currentUser = null;
+
+    async function authedFetch(url, options = {}) {
+      if (!currentUser) throw new Error('Not signed in');
+      const token = await currentUser.getIdToken();
+      const headers = {
+        ...(options.headers || {}),
+        'Authorization': `Bearer ${token}`
+      };
+      return fetch(url, { ...options, headers });
+    }
 
     document.getElementById('btn-login').onclick = () => signInWithPopup(auth, new GoogleAuthProvider());
 
     onAuthStateChanged(auth, (user) => {
       if (user) {
-        currentUid = user.uid;
+        currentUser = user;
         document.getElementById('auth-panel').style.display = 'none';
         document.getElementById('app-panel').style.display = 'block';
         document.getElementById('user-email').innerText = user.email;
+      } else {
+        currentUser = null;
+        document.getElementById('auth-panel').style.display = 'block';
+        document.getElementById('app-panel').style.display = 'none';
       }
     });
 
     document.getElementById('btn-send').onclick = async () => {
       const input = document.getElementById('user-input');
       const message = input.value.trim();
-      if (!message || !currentUid) return;
+      if (!message || !currentUser) return;
 
       const chatBox = document.getElementById('chat-box');
       chatBox.innerHTML += `<div class="msg user">${message}</div>`;
       input.value = '';
 
       try {
-        const res = await fetch('/api/chat', {
+        const res = await authedFetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, uid: currentUid })
+          body: JSON.stringify({ message })
         });
         const data = await res.json();
         chatBox.innerHTML += `<div class="msg bot">${data.reply || data.response || 'Message logged.'}</div>`;
@@ -170,22 +184,22 @@
     document.getElementById('btn-analyze').onclick = async () => {
       const input = document.getElementById('user-input');
       const entry = input.value.trim();
-      if (!entry || !currentUid) {
+      if (!entry || !currentUser) {
         alert("Please write a reflection in the text box first.");
         return;
       }
 
       try {
-        const res = await fetch('/api/summarize', {
+        const res = await authedFetch('/api/summarize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entry, uid: currentUid })
+          body: JSON.stringify({ entry })
         });
         const data = await res.json();
-        
+
         document.getElementById('analytics-panel').style.display = 'block';
         document.getElementById('history-panel').style.display = 'none';
-        
+
         document.getElementById('mood-badge').innerText = data.mood || data.current?.mood || 'Reflective';
         document.getElementById('summary-text').innerText = data.summary || data.current?.summary || '-';
         document.getElementById('tip-text').innerText = data.tip || data.actionableTip || data.actionable_tip || data.current?.tip || '-';
@@ -195,18 +209,18 @@
     };
 
     document.getElementById('btn-history').onclick = async () => {
-      if (!currentUid) return;
-      
+      if (!currentUser) return;
+
       const container = document.getElementById('history-container');
       container.innerHTML = '<p>Loading your past reflections...</p>';
-      
+
       document.getElementById('history-panel').style.display = 'block';
       document.getElementById('analytics-panel').style.display = 'none';
 
       try {
-        const res = await fetch(`/api/history?uid=${currentUid}`);
+        const res = await authedFetch('/api/history');
         const data = await res.json();
-        
+
         container.innerHTML = '';
 
         const list = data.history || data.journals || data.entries || data.reflections || [];
@@ -222,7 +236,7 @@
           const entryText = pickValid(item.userEntry, item.entry, item.prompt, item.text, item.message, item.reflection);
           const aiText = pickValid(item.aiResponse, item.summary, item.reply, item.response, item.tip);
           const dateDisplay = pickValid(item.date, item.createdAt, item.created_at, item.timestamp);
-          
+
           container.innerHTML += `
             <div class="history-item">
               <p class="history-date">${dateDisplay}</p>

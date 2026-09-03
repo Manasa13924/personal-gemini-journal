@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path = require('path');
 
 const app = express();
@@ -12,7 +11,9 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname));
 
-// Safe Firebase Initialization
+// ---------------------------------------------------------------------------
+// Firebase Admin Initialization
+// ---------------------------------------------------------------------------
 let db = null;
 try {
   const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || '/etc/secrets/google-credentials.json';
@@ -25,36 +26,107 @@ try {
   console.warn('Firebase warning (running without Firestore):', error.message);
 }
 
-// Initialize Gemini AI Client
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || '');
+// ---------------------------------------------------------------------------
+// Auth middleware — verifies the Firebase ID token sent from the frontend.
+// uid is ALWAYS taken from the verified token, never from the request body
+// or query string. This is what prevents one user from reading/writing
+// another user's data.
+// ---------------------------------------------------------------------------
+async function verifyAuth(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
-async function getGeminiResponse(promptText) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-  const result = await model.generateContent(promptText);
-  return result.response.text();
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized: missing ID token' });
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.uid = decoded.uid;
+    next();
+  } catch (err) {
+    console.error('Token verification failed:', err.message);
+    return res.status(401).json({ error: 'Unauthorized: invalid or expired token' });
+  }
 }
 
-// 1. Chat Endpoint (/api/chat)
-app.post('/api/chat', async (req, res) => {
+// ---------------------------------------------------------------------------
+// Gemini call via the OpenAI-compatible endpoint.
+//
+// Google's newer "Auth keys" (prefix AQ.) are currently rejected by the
+// native generativelanguage.googleapis.com generateContent endpoint with a
+// 401 ACCESS_TOKEN_TYPE_UNSUPPORTED error — this is a known, unresolved
+// Google-side rollout issue affecting many developers as of Sep 2026.
+// The OpenAI-compatible endpoint accepts the same key via a standard Bearer
+// header and works around it. This also works fine with older AIza keys.
+// ---------------------------------------------------------------------------
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+
+async function getGeminiResponse(promptText) {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || '';
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
+
+  let lastError = null;
+
+  for (const model of GEMINI_MODELS) {
+    try {
+      const response = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: promptText }]
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Gemini API error ${response.status} (model ${model}): ${errText}`);
+      }
+
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) throw new Error(`Empty response from model ${model}`);
+      return text;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Gemini model ${model} failed, trying next fallback if available:`, err.message);
+    }
+  }
+
+  throw lastError || new Error('All Gemini model attempts failed');
+}
+
+// ---------------------------------------------------------------------------
+// 1. Chat Endpoint (/api/chat) — requires a verified ID token
+// ---------------------------------------------------------------------------
+app.post('/api/chat', verifyAuth, async (req, res) => {
   try {
     const message = req.body.message || req.body.prompt || req.body.text || req.body.entry || '';
-    const uid = req.body.uid || req.body.userId || 'anonymous';
-    
+    const uid = req.uid; // trusted, from verified token — never from req.body
+
     if (!message) {
       return res.status(400).json({ error: 'Message text required' });
     }
 
     let responseText = '';
     try {
-      responseText = await getGeminiResponse(`You are a supportive, warm personal AI companion for journaling. Respond helpfully and conversationally to: "${message}"`);
+      responseText = await getGeminiResponse(
+        `You are a supportive, warm personal AI companion for journaling. Respond helpfully and conversationally to: "${message}"`
+      );
     } catch (aiErr) {
       console.error('Gemini API Error:', aiErr.message);
       responseText = `I hear you on that. Thanks for sharing your reflection today!`;
     }
 
     if (db) {
-      await db.collection('journals').add({
-        uid,
+      await db.collection('users').doc(uid).collection('journals').add({
         entry: message,
         response: responseText,
         timestamp: admin.firestore.FieldValue.serverTimestamp()
@@ -68,11 +140,13 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// 2. Summarize & Mood Analysis Endpoint (/api/summarize)
-app.post('/api/summarize', async (req, res) => {
+// ---------------------------------------------------------------------------
+// 2. Summarize & Mood Analysis Endpoint (/api/summarize) — requires auth
+// ---------------------------------------------------------------------------
+app.post('/api/summarize', verifyAuth, async (req, res) => {
   try {
     const entry = req.body.entry || req.body.message || req.body.text || '';
-    const uid = req.body.uid || req.body.userId || 'anonymous';
+    const uid = req.uid;
 
     if (!entry) {
       return res.status(400).json({ error: 'Entry text required' });
@@ -102,8 +176,7 @@ Entry: "${entry}"`;
     }
 
     if (db) {
-      await db.collection('journals').add({
-        uid,
+      await db.collection('users').doc(uid).collection('journals').add({
         entry,
         mood,
         summary,
@@ -118,18 +191,20 @@ Entry: "${entry}"`;
   }
 });
 
-// 3. History Endpoint (/api/history)
-app.get('/api/history', async (req, res) => {
+// ---------------------------------------------------------------------------
+// 3. History Endpoint (/api/history) — requires auth, scoped to caller's uid
+// ---------------------------------------------------------------------------
+app.get('/api/history', verifyAuth, async (req, res) => {
   try {
-    const uid = req.query.uid;
+    const uid = req.uid;
     if (!db) return res.status(200).json({ success: true, history: [] });
 
-    let query = db.collection('journals').orderBy('timestamp', 'desc');
-    if (uid) {
-      query = query.where('uid', '==', uid);
-    }
-    
-    const snapshot = await query.limit(20).get();
+    const snapshot = await db
+      .collection('users').doc(uid).collection('journals')
+      .orderBy('timestamp', 'desc')
+      .limit(20)
+      .get();
+
     const entries = [];
     snapshot.forEach(doc => {
       const data = doc.data();
@@ -137,10 +212,10 @@ app.get('/api/history', async (req, res) => {
       if (data.timestamp && data.timestamp.toDate) {
         formattedDate = data.timestamp.toDate().toLocaleString();
       }
-      entries.push({ 
-        id: doc.id, 
-        ...data, 
-        date: formattedDate 
+      entries.push({
+        id: doc.id,
+        ...data,
+        date: formattedDate
       });
     });
 
