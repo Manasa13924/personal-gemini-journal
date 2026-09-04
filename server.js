@@ -60,7 +60,7 @@ async function verifyAuth(req, res, next) {
 // The OpenAI-compatible endpoint accepts the same key via a standard Bearer
 // header and works around it. This also works fine with older AIza keys.
 // ---------------------------------------------------------------------------
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-2.5-flash'];
 
 async function getGeminiResponse(promptText) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEYS || '';
