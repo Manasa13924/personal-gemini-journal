@@ -204,6 +204,25 @@
     .history-date { font-size: 0.8rem !important; color: var(--text-muted); margin-bottom: 8px !important; }
 
     .empty-state { text-align: center; color: var(--text-muted); padding: 20px; font-size: 0.9rem; }
+
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      display: none; align-items: center; justify-content: center; z-index: 100;
+      animation: fadeIn 0.15s ease;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal-box {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px;
+      padding: 24px; max-width: 340px; width: 90%; box-shadow: 0 20px 50px -12px rgba(0,0,0,0.35);
+    }
+    .modal-box h4 { font-size: 1.05rem; margin-bottom: 8px; color: var(--text-main); }
+    .modal-box p { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 10px; }
+    .modal-actions button { flex: 1; padding: 10px; }
+    .btn-cancel { background: var(--bg-color); color: var(--text-main); border: 1px solid var(--border); }
+    .btn-cancel:hover { border-color: var(--text-muted); }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover { background: #dc2626; }
   </style>
 </head>
 <body>
@@ -292,6 +311,17 @@
       <div id="history-panel" class="card" style="display:none; margin-top: 20px;">
         <h3>Past Reflection History</h3>
         <div id="history-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="logout-modal">
+    <div class="modal-box">
+      <h4>Log out?</h4>
+      <p>You'll need to sign in again to access your journal.</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="logout-cancel">Cancel</button>
+        <button class="btn-danger" id="logout-confirm">Log Out</button>
       </div>
     </div>
   </div>
@@ -440,7 +470,20 @@
       }
     };
 
-    document.getElementById('btn-logout').onclick = () => signOut(auth);
+    const logoutModal = document.getElementById('logout-modal');
+    document.getElementById('btn-logout').onclick = () => {
+      logoutModal.classList.add('visible');
+    };
+    document.getElementById('logout-cancel').onclick = () => {
+      logoutModal.classList.remove('visible');
+    };
+    document.getElementById('logout-confirm').onclick = () => {
+      logoutModal.classList.remove('visible');
+      signOut(auth);
+    };
+    logoutModal.onclick = (e) => {
+      if (e.target === logoutModal) logoutModal.classList.remove('visible');
+    };
 
     // ---------------------------------------------------------------------
     // Auth state + authenticated fetch helper
@@ -458,6 +501,20 @@
     function setButtonLoading(btn, loading, loadingLabel, originalLabel) {
       btn.disabled = loading;
       btn.innerHTML = loading ? `<span class="spinner"></span> ${loadingLabel}` : originalLabel;
+    }
+
+    // Escapes raw HTML, then renders basic markdown (**bold**, *italic*, line breaks)
+    // that Gemini often includes in its replies, so they display properly instead
+    // of showing literal asterisks.
+    function formatBotText(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      let escaped = div.innerHTML;
+      escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      escaped = escaped.replace(/(?<!\*)\*(?!\*)(.+?)\*(?!\*)/g, '<em>$1</em>');
+      escaped = escaped.replace(/\n/g, '<br>');
+      return escaped;
     }
 
     onAuthStateChanged(auth, (user) => {
@@ -525,7 +582,7 @@
         chatBox.innerHTML += `
           <div class="msg-row">
             <div class="avatar bot">G</div>
-            <div class="msg bot">${data.reply || data.response || 'Message logged.'}</div>
+            <div class="msg bot">${formatBotText(data.reply || data.response) || 'Message logged.'}</div>
           </div>`;
         chatBox.scrollTop = chatBox.scrollHeight;
       } catch (err) {
@@ -563,8 +620,8 @@
         document.getElementById('history-panel').style.display = 'none';
 
         document.getElementById('mood-badge').innerText = data.mood || data.current?.mood || 'Reflective';
-        document.getElementById('summary-text').innerText = data.summary || data.current?.summary || '-';
-        document.getElementById('tip-text').innerText = data.tip || data.actionableTip || data.actionable_tip || data.current?.tip || '-';
+        document.getElementById('summary-text').innerHTML = formatBotText(data.summary || data.current?.summary) || '-';
+        document.getElementById('tip-text').innerHTML = formatBotText(data.tip || data.actionableTip || data.actionable_tip || data.current?.tip) || '-';
       } catch (err) {
         alert("Failed to analyze reflection.");
       } finally {
@@ -607,8 +664,8 @@
           container.innerHTML += `
             <div class="history-item">
               <p class="history-date">${dateDisplay}</p>
-              <p><strong>YOUR ENTRY:</strong> ${entryText}</p>
-              <p><strong>GEMINI RESPONSE:</strong> ${aiText}</p>
+              <p><strong>YOUR ENTRY:</strong> ${formatBotText(entryText)}</p>
+              <p><strong>GEMINI RESPONSE:</strong> ${formatBotText(aiText)}</p>
             </div>
           `;
         });
