@@ -93,6 +93,17 @@
     .auth-form input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.12); }
     .field-error { color: var(--error-text); font-size: 0.78rem; min-height: 16px; margin-top: -6px; }
 
+    .password-wrapper { position: relative; }
+    .password-wrapper input { padding-right: 44px; }
+    .password-toggle {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      width: 34px; height: 34px; border: none; background: transparent; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; border-radius: 8px;
+      color: var(--text-muted); flex: none; padding: 0;
+    }
+    .password-toggle:hover { background: var(--bg-color); color: var(--text-main); }
+    .password-toggle svg { width: 18px; height: 18px; }
+
     .auth-error-banner {
       background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-border);
       padding: 10px 14px; border-radius: 10px; font-size: 0.85rem; text-align: left; display: none;
@@ -221,7 +232,15 @@
         <div class="field-error" id="email-error"></div>
 
         <label for="password-input">Password</label>
-        <input type="password" id="password-input" placeholder="At least 6 characters" autocomplete="current-password" required>
+        <div class="password-wrapper">
+          <input type="password" id="password-input" placeholder="At least 6 characters" autocomplete="current-password" required>
+          <button type="button" class="password-toggle" id="password-toggle-btn" title="Show password" aria-label="Show password">
+            <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
         <div class="field-error" id="password-error"></div>
 
         <button type="submit" class="btn-primary" id="btn-email-submit" style="margin-top: 6px;">Log In</button>
@@ -337,6 +356,19 @@
     }
     tabLogin.onclick = () => setAuthMode('login');
     tabSignup.onclick = () => setAuthMode('signup');
+
+    // Show/hide password toggle
+    const passwordToggleBtn = document.getElementById('password-toggle-btn');
+    const eyeIcon = document.getElementById('eye-icon');
+    const EYE_OPEN = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>';
+    const EYE_CLOSED = '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+    passwordToggleBtn.onclick = () => {
+      const isHidden = passwordInput.type === 'password';
+      passwordInput.type = isHidden ? 'text' : 'password';
+      eyeIcon.innerHTML = isHidden ? EYE_CLOSED : EYE_OPEN;
+      passwordToggleBtn.title = isHidden ? 'Hide password' : 'Show password';
+      passwordToggleBtn.setAttribute('aria-label', passwordToggleBtn.title);
+    };
 
     function clearErrors() {
       emailError.textContent = '';
